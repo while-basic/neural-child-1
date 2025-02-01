@@ -1,0 +1,27 @@
+# NeuralMind Configuration
+hardware:
+  cuda: true
+  mixed_precision: true
+  memory_optimization: true
+
+model_params:
+  hidden_dim: 1024
+  num_layers: 12
+  num_heads: 16
+
+curriculum:
+  stage_thresholds:
+    infancy: 0.7
+    toddler: 1.5
+    adolescence: 2.3
+    adulthood: 3.8
+
+memory:
+  capacity: 100000
+  replay_batch_size: 32
+  consolidation_interval: 3600
+
+ethical_constraints:
+  harm_threshold: 0.4
+  fairness_weight: 0.9
+  honesty_bias: 0.75
