@@ -5,7 +5,7 @@ from typing import List, Dict, Union, Optional
 
 def get_embeddings(text_input: Union[str, List[str]], 
                   model: str = "text-embedding-nomic-embed-text-v1.5",
-                  server_url: str = "http://192.168.2.12:1234/v1/embeddings") -> List[Dict]:
+                  server_url: str = "http://0.0.0.0:1234/v1/embeddings") -> List[Dict]: #Using a local Embedding model in LM Studio for embedding purposes.
     try:
         payload_input = [text_input] if isinstance(text_input, str) else text_input
         
