@@ -12,7 +12,7 @@ def chat_completion(
     temperature: float = 0.7,
     max_tokens: int = -1,
     stream: bool = True,
-    server_url: str = "http://192.168.2.12:1234/v1/chat/completions",
+    server_url: str = "http://0.0.0.0:1234/v1/chat/completions", # Through LM studio with a local LLM like in this case: Qwen2.5-7b-instruct
     structured_output: bool = False
 ) -> Optional[Dict[str, Any]]:
     """
