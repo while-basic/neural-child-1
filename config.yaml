@@ -3,25 +3,57 @@ hardware:
   cuda: true
   mixed_precision: true
   memory_optimization: true
+  device: "cuda"  # Added to match device specifications in the code
 
 model_params:
+  base_dim: 128  # Added to match DynamicNeuralChild implementation
   hidden_dim: 1024
   num_layers: 12
   num_heads: 16
+  dropout: 0.1  # Added based on code implementation
 
 curriculum:
   stage_thresholds:
-    infancy: 0.7
-    toddler: 1.5
-    adolescence: 2.3
-    adulthood: 3.8
+    newborn: 0.2
+    early_infancy: 0.3
+    late_infancy: 0.4
+    early_toddler: 0.5
+    late_toddler: 0.6
+    early_preschool: 0.7
+    late_preschool: 0.75
+    early_childhood: 0.8
+    middle_childhood: 0.85
+    late_childhood: 0.9
+    early_elementary: 0.9
+    middle_elementary: 0.92
+    late_elementary: 0.94
+    early_adolescence: 0.95
+    middle_adolescence: 0.96
+    late_adolescence: 0.97
+    young_adult: 0.98
+    mature_adult: 0.99
 
 memory:
-  capacity: 100000
+  short_term_capacity: 1000  # Added to match memory_module.py
+  long_term_capacity: 50000  # Added to match memory_module.py
   replay_batch_size: 32
   consolidation_interval: 3600
+  working_memory_size: 10  # Added based on code implementation
+
+emotional_regulation:
+  emotion_dim: 4  # Added based on emotional_regulation.py
+  context_window: 5
+  memory_dim: 32
 
 ethical_constraints:
   harm_threshold: 0.4
   fairness_weight: 0.9
   honesty_bias: 0.75
+  anxiety_threshold: 0.7  # Added based on defense mechanisms implementation
+
+training:
+  learning_rate: 3e-4  # Added based on self_supervised_trainer.py
+  weight_decay: 0.01
+  gradient_clip_norm: 1.0
+  warmup_steps: 1000
+  checkpoint_interval: 100
