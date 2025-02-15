@@ -101,10 +101,15 @@ class CognitiveBiases:
         return biased_evidence
 
 class DynamicNeuralChild(nn.Module):
-    def __init__(self, base_dim=128):
+    def __init__(self, device=None, base_dim=128):
         super().__init__()
+        if device is None:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = device
+            
+        # Store base dimension as instance variable
         self.base_dim = base_dim
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
         # Initialize core components
         self.sensory = SensoryExperience(self.device)
@@ -115,30 +120,30 @@ class DynamicNeuralChild(nn.Module):
         self.attachment = AttachmentSystem(self.device)
         self.defense_mechanisms = DefenseMechanisms(self.device)
         
-        # Enhanced emotional system
+        # Enhanced emotional system - Fix: Remove unsupported parameters
         self.emotional_regulation = EmotionalRegulation(
             emotion_dim=4,
-            context_window=5,
-            memory_dim=32
+            hidden_dim=64,
+            device=self.device
         )
         
         # Memory systems
-        self.memory = DifferentiableMemory()
+        self.memory = DifferentiableMemory(device=self.device)
         self.emotional_state = torch.zeros(4, device=self.device)
         
         # Projection and embedding layers
-        self.input_projection = nn.Linear(768, base_dim).to(self.device)
+        self.input_projection = nn.Linear(768, self.base_dim).to(self.device)
         self.drive_projection = nn.Linear(10, len(self.drives.drives)).to(self.device)
         self.psychological_projection = nn.Linear(
-            base_dim + 256 + len(self.drives.drives) + 4, 
+            self.base_dim + 256 + len(self.drives.drives) + 4, 
             512
         ).to(self.device)
         
         # Core processing layers with psychological integration
         # FIX: Changed input dimension from (base_dim+256+5+4=393) to base_dim (128)
         self.core_layers = nn.ModuleList([
-            nn.Linear(base_dim, base_dim),
-            nn.LayerNorm(base_dim),
+            nn.Linear(self.base_dim, self.base_dim),
+            nn.LayerNorm(self.base_dim),
             nn.GELU(),
             nn.Dropout(0.1)
         ])
@@ -149,16 +154,16 @@ class DynamicNeuralChild(nn.Module):
             nn.LayerNorm(512),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(512, base_dim)
+            nn.Linear(512, self.base_dim)
         ).to(self.device)
         
         # Cognitive systems
         self.cognitive_biases = CognitiveBiases()
-        self.current_beliefs = torch.zeros(base_dim, device=self.device)
+        self.current_beliefs = torch.zeros(self.base_dim, device=self.device)
         
         # Growth and plasticity parameters
         self.growth_rate = 1.2
-        self.current_dim = base_dim
+        self.current_dim = self.base_dim
         
         # Attribute to store last attachment trust for loss computation
         self.last_attachment_trust = torch.tensor(0.5, device=self.device)

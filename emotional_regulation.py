@@ -42,7 +42,7 @@ class EmotionalState:
         self.stability_window.append(total_change)
         
     def get_complex_emotion(self, emotion_name: str) -> float:
-        if emotion_name not in self.complex_emotions:
+        if (emotion_name not in self.complex_emotions):
             return 0.0
         composition = self.complex_emotions[emotion_name]
         intensity = sum(
@@ -74,15 +74,18 @@ class EmotionalState:
             self.primary_emotions[emotion].data = tensor[i]
 
 class EmotionalRegulation(nn.Module):
-    def __init__(self, emotion_dim=4, context_window=5, memory_dim=32):
+    def __init__(self, emotion_dim=4, hidden_dim=64, device='cpu'):
         super().__init__()
-        self.emotion_dim = emotion_dim
-        self.context_window = context_window
-        self.memory_dim = memory_dim
+        self.device = device
+        self.baseline = torch.zeros(emotion_dim, device=device)
+        self.emotional_memory = torch.zeros((100, emotion_dim), device=device)
+        self.memory_pointer = 0
         
-        # Define the missing parameters
-        self.trauma_threshold = 1.0
-        self.resilience = 1.0
+        self.regulation_network = nn.Sequential(
+            nn.Linear(emotion_dim * 2, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, emotion_dim)
+        ).to(device)
         
         self.context_processor = nn.LSTM(
             input_size=emotion_dim,
@@ -90,25 +93,23 @@ class EmotionalRegulation(nn.Module):
             num_layers=2,
             batch_first=True,
             dropout=0.1
-        )
+        ).to(device)
         
         self.stability_net = nn.Sequential(
-            nn.Linear(emotion_dim * 2 + memory_dim, 256),
+            nn.Linear(emotion_dim * 2 + hidden_dim, 256),
             nn.LayerNorm(256),
             nn.GELU(),
             nn.Linear(256, emotion_dim)
-        )
+        ).to(device)
         
         self.memory_gate = nn.Sequential(
-            nn.Linear(memory_dim + emotion_dim, 64),
+            nn.Linear(hidden_dim + emotion_dim, 64),
             nn.GELU(),
             nn.Linear(64, emotion_dim),
             nn.Sigmoid()
-        )
+        ).to(device)
         
-        self.emotional_history = deque(maxlen=context_window)
-        self.baseline = torch.zeros(emotion_dim, device='cuda')
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.emotional_history = deque(maxlen=5)
         self.to(self.device)
         
     def update_baseline(self):
@@ -121,14 +122,14 @@ class EmotionalRegulation(nn.Module):
         intensity = torch.norm(emotional_state - self.baseline)
         duration = len([e for e in self.emotional_history if torch.norm(e - self.baseline) > 0.7])
         return {
-            'is_traumatic': intensity > self.trauma_threshold,
+            'is_traumatic': intensity > 1.0,
             'duration': duration,
             'intensity': intensity.item()
         }
         
     def compute_regulation_strength(self, emotional_state):
         deviation = torch.abs(emotional_state - self.baseline)
-        return torch.sigmoid(deviation * self.resilience)
+        return torch.sigmoid(deviation * 1.0)
         
     def regulate(self, emotional_state, stimulus, memory_context=None):
         if len(self.emotional_history) >= 2:
@@ -144,7 +145,7 @@ class EmotionalRegulation(nn.Module):
             memory_influence = None
         combined_input = torch.cat([
             context_embedding,
-            memory_context if memory_context is not None else torch.zeros(self.memory_dim, device=self.device)
+            memory_context if memory_context is not None else torch.zeros(64, device=self.device)
         ], dim=-1)
         regulated_response = self.stability_net(combined_input)
         new_state = torch.clamp(regulated_response, 0, 1)

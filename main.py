@@ -10,6 +10,10 @@ from moral_network import MoralPolicyNetwork
 from metacognition import MetacognitionSystem
 from self_supervised_trainer import AutonomousTrainer
 from text_embed import get_embeddings
+import psutil
+import config
+
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class MotherLLM:
     def __init__(self):
@@ -199,45 +203,88 @@ class MotherLLM:
         self.feedback_history = []
         self.conversation_history = []
     
-    def generate_stimulus(self, stage, child_response="[EMPTY]"):
-        self.conversation_history.append({"role": "child", "content": child_response})
-        prompt_text = self.stage_prompts.get(stage, self.stage_prompts[DevelopmentalStage.NEWBORN])
-        prompt = prompt_text + f" Conversation history: {self.conversation_history}"
-        response = chat_completion(
-            system_prompt=prompt,
-            user_prompt="Provide nurturing feedback and guidance:",
-            structured_output=True
-        )
-        emotional_vector = torch.tensor([
-            response.get('joy', 0.5),
-            response.get('trust', 0.5),
-            response.get('fear', 0.1),
-            response.get('surprise', 0.3)
-        ], device='cuda')
-        if self.emotional_history:
-            decay = 0.9 ** len(self.emotional_history)
-            emotional_vector += self.emotional_history[-1] * decay
-        self.emotional_history.append(emotional_vector)
-        self.conversation_history.append({"role": "mother", "content": response['content']})
-        self.feedback_history.append(response)
-        return {
-            'text': response['content'],
-            'emotional_vector': torch.sigmoid(emotional_vector)
-        }
+    def _get_model_response(self, stage, user_input):
+        """Get formatted response from the model based on stage and input."""
+        try:
+            # Get the appropriate prompt for the current stage
+            stage_prompt = self.stage_prompts.get(stage, self.stage_prompts[DevelopmentalStage.NEWBORN])
+            
+            # Format the complete prompt
+            full_prompt = f"{stage_prompt}\nChild's current state: {user_input}\nRespond appropriately:"
+            
+            # Get response from LLM
+            response = chat_completion(
+                system_prompt=full_prompt,
+                user_prompt=user_input,
+                structured_output=True
+            )
+            
+            # Ensure response has required fields
+            return {
+                'text': response.get('response_text', 'I need a moment to think.'),
+                'happiness': float(response.get('emotional_context', {}).get('happiness', 0.5)),
+                'sadness': float(response.get('emotional_context', {}).get('sadness', 0.5)),
+                'anger': float(response.get('emotional_context', {}).get('anger', 0.5)),
+                'fear': float(response.get('emotional_context', {}).get('fear', 0.5))
+            }
+        except Exception as e:
+            print(f"Error in _get_model_response: {e}")
+            # Return safe default values
+            return {
+                'text': 'I need a moment to think.',
+                'happiness': 0.5,
+                'sadness': 0.5,
+                'anger': 0.5,
+                'fear': 0.5
+            }
+
+    def generate_stimulus(self, stage, user_input):
+        """Generate appropriate stimulus based on developmental stage and user input."""
+        try:
+            # Get response from model
+            response_data = self._get_model_response(stage, user_input)
+            
+            # Extract emotional values (they're already validated in _get_model_response)
+            emotional_vector = [
+                response_data['happiness'],
+                response_data['sadness'],
+                response_data['anger'],
+                response_data['fear']
+            ]
+
+            return {
+                'text': response_data['text'],
+                'emotional_vector': emotional_vector
+            }
+        except Exception as e:
+            print(f"Error in generate_stimulus: {e}")
+            return config.DEFAULT_RESPONSE
 
 class DigitalChild:
     def __init__(self):
-        self.brain = DynamicNeuralChild()
+        self.brain = DynamicNeuralChild(device=device)
         self.memory = DifferentiableMemory()
-        self.morality = MoralPolicyNetwork(device=self.brain.device)
+        self.morality = MoralPolicyNetwork(device=device)
         self.metacognition = MetacognitionSystem()
         self.curriculum = DevelopmentalSystem()
         self.trainer = AutonomousTrainer(self.brain, self.memory, self.morality)
         self.mother = MotherLLM()
         self.birth_date = datetime.now()
-        self.emotional_state = torch.zeros(4, device='cuda')
+        self.emotional_state = torch.zeros(4, device=device)
         
     def update_emotions(self, mother_vector):
+        """Update emotional state based on mother's emotional vector."""
+        # Convert mother_vector to tensor if it's a list
+        if isinstance(mother_vector, list):
+            mother_vector = torch.tensor(mother_vector, device=device)
+        
+        # Ensure both tensors are the same shape and device
+        if mother_vector.dim() == 0:
+            mother_vector = mother_vector.unsqueeze(0)
+        if mother_vector.dim() == 1:
+            mother_vector = mother_vector.to(device)
+            
+        # Calculate delta and update emotional state
         delta = mother_vector - self.emotional_state
         self.emotional_state += 0.3 * delta + 0.1 * torch.randn_like(delta)
         self.emotional_state = torch.clamp(self.emotional_state, 0, 1)
@@ -282,13 +329,18 @@ class DigitalChild:
         return "[" + " & ".join(feelings).upper() + "]"
 
     def perceive(self, stimulus):
-        return torch.tensor(
-            get_embeddings(stimulus['text'])[0]['embedding'], 
-            device='cuda'
-        ).unsqueeze(0)
-        
+        try:
+            embeddings = get_embeddings(stimulus['text'])
+            if not embeddings:  # If empty list returned
+                return torch.zeros(1, config.EMBEDDING_DIM, device=device)
+            return torch.tensor(embeddings[0]['embedding'], device=device).unsqueeze(0)
+        except (IndexError, KeyError, Exception) as e:
+            print(f"Error in perceive: {e}")
+            # Return default embedding vector
+            return torch.zeros(1, config.EMBEDDING_DIM, device=device)
+    
     def respond(self, perception):
-        with torch.amp.autocast("cuda"):
+        with torch.amp.autocast(device.type):
             return self.brain(perception)
     
     def learn(self, mother_feedback):
@@ -313,46 +365,96 @@ def main():
         'theory_of_mind': child.brain.theory_of_mind.social_bias.tolist()
     }
     
+    # Stage progression control
+    interactions_per_stage = 100
+    total_stages_completed = 0
+    max_stages = len(DevelopmentalStage) - 1  # Total number of stages
+    stage_metrics = {
+        'success_rate': 0.0,
+        'abstraction': 0.0,
+        'self_awareness': 0.0
+    }
+    
     try:
-        while True:
-            # Use the child's current stage from its curriculum.
-            stimulus = child.mother.generate_stimulus(child.curriculum.current_stage, child.express_feeling())
-            child.update_emotions(stimulus['emotional_vector'])
-            perception = child.perceive(stimulus)
-            response = child.respond(perception)
+        while total_stages_completed < max_stages:
+            current_stage = child.curriculum.current_stage
+            current_stage_interactions = 0
             
-            feedback = chat_completion(
-                system_prompt=f"Evaluate this response from your digital child: {response}",
-                user_prompt=f"Child expressed {child.express_feeling()}. Provide nurturing feedback:",
-                structured_output=True
-            )
+            # Complete required interactions for current stage
+            while current_stage_interactions < interactions_per_stage:
+                try:
+                    # Generate and process response
+                    stimulus = child.mother.generate_stimulus(current_stage, child.express_feeling())
+                    child.update_emotions(stimulus['emotional_vector'])
+                    perception = child.perceive(stimulus)
+                    response = child.respond(perception)
+                    
+                    # Get feedback
+                    feedback = chat_completion(
+                        system_prompt=f"Evaluate this response from your {current_stage.name.lower()} digital child: {response}",
+                        user_prompt=f"Child expressed {child.express_feeling()}. Provide nurturing feedback:",
+                        structured_output=True
+                    )
+                    
+                    # Update metrics
+                    stage_metrics['success_rate'] += feedback.get('reward_score', 0.5)
+                    stage_metrics['abstraction'] += feedback.get('complexity_rating', 0.5)
+                    stage_metrics['self_awareness'] += feedback.get('self_critique_score', 0.5)
+                    
+                    # Learning step
+                    loss = child.learn({
+                        'input': perception,
+                        'internal_state': response,
+                        'reward': feedback.get('reward_score', 0.5)
+                    })
+                    
+                    # Update counters
+                    current_stage_interactions += 1
+                    
+                    # Average metrics for stage progression
+                    if current_stage_interactions >= interactions_per_stage:
+                        # Calculate averages
+                        for key in stage_metrics:
+                            stage_metrics[key] /= interactions_per_stage
+                        
+                        # Update stage
+                        old_stage = current_stage
+                        child.curriculum.update_stage(stage_metrics)
+                        
+                        # Check if stage changed
+                        if child.curriculum.current_stage != old_stage:
+                            print(f"\nProgressing from {old_stage.name} to {child.curriculum.current_stage.name}")
+                            total_stages_completed += 1
+                            # Reset metrics for next stage
+                            for key in stage_metrics:
+                                stage_metrics[key] = 0.0
+                            break
+                    
+                    # Print progress
+                    print(f"\rStage: {current_stage.name} | Progress: {current_stage_interactions}/{interactions_per_stage} | Completed Stages: {total_stages_completed}/{max_stages}", end='')
+                    
+                    # Memory management
+                    if current_stage_interactions % 10 == 0:
+                        child.memory.replay_consolidation()
+                        
+                except Exception as e:
+                    print(f"\nError in interaction: {e}")
+                    time.sleep(1)
+                    continue
             
-            # Here's the fix! Just append loss directly since it's already a float
-            loss = child.learn({
-                'input': perception,
-                'internal_state': response,
-                'reward': feedback['reward_score']
-            })
-            
-            telemetry['loss'].append(loss)  # Removed .item() call
-            telemetry['memory_usage'].append(torch.cuda.memory_allocated())
-            telemetry['moral_scores'].append(feedback['reward_score'])
-            
-            child.curriculum.update_stage({
-                'success_rate': feedback['success_metric'],
-                'abstraction': feedback['complexity_rating'],
-                'self_awareness': feedback['self_critique_score']
-            })
-            
-            # Periodic memory consolidation
-            if time.time() % 86400 < 3600:
-                child.memory.replay_consolidation()
-            if torch.cuda.memory_allocated() / torch.cuda.max_memory_allocated() > 0.9:
-                child.memory.replay_consolidation(batch_size=16)
-                
+            # Force stage progression if stuck
+            if child.curriculum.current_stage == current_stage:
+                print(f"\nForcing progression from {current_stage.name}")
+                next_stage_value = min(current_stage.value + 1, max_stages)
+                child.curriculum.current_stage = DevelopmentalStage(next_stage_value)
+                total_stages_completed += 1
+    
     except KeyboardInterrupt:
         print(f"\nMother: Goodnight my dear child. (Age: {child.age()} months)")
+    finally:
+        print("\nSaving final state...")
         torch.save(child.brain.state_dict(), f"digital_child_{child.age()}mo.pth")
+        print("Save complete.")
 
 if __name__ == "__main__":
     main()

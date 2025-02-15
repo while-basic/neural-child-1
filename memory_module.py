@@ -25,9 +25,13 @@ class MemoryCluster:
 class DifferentiableMemory(nn.Module):
     def __init__(self, embedding_dim: int = 768, 
                 short_term_capacity: int = 1000,
-                long_term_capacity: int = 50000):
+                long_term_capacity: int = 50000,
+                device=None):
         super().__init__()
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if device is None:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = device
         
         self.short_term_memory = deque(maxlen=short_term_capacity)
         self.working_memory = deque(maxlen=10)
@@ -56,7 +60,7 @@ class DifferentiableMemory(nn.Module):
             nn.Linear(256, 128)
         )
         
-        self.replay_optimizer = ReplayOptimizer(memory_capacity=long_term_capacity)
+        self.replay_optimizer = ReplayOptimizer(memory_capacity=long_term_capacity, device=self.device)
         self.forgetting_rate = nn.Parameter(torch.tensor(0.1, device=self.device))
         self.consolidation_threshold = nn.Parameter(torch.tensor(0.7, device=self.device))
         self.emotional_importance = nn.Parameter(torch.ones(4, device=self.device))

@@ -654,3 +654,25 @@ class DevelopmentalSystem:
                 'cognitive_abilities': behaviors.cognitive_abilities
             }
         }
+    
+    def get_stage_appropriate_responses(self) -> Dict[str, List[str]]:
+        """Returns templates for stage-appropriate responses"""
+        stage_responses = {
+            DevelopmentalStage.NEWBORN: {
+                'comfort': ['[CRY]', '[SLEEP]', '[FEED]'],
+                'social': ['[LOOK]', '[SMILE]'],
+            },
+            DevelopmentalStage.EARLY_INFANCY: {
+                'vocal': ['[BABBLE]', '[COO]'],
+                'motor': ['[REACH]', '[KICK]'],
+                'social': ['[SMILE]', '[LAUGH]'],
+            },
+            DevelopmentalStage.LATE_INFANCY: {
+                'motor': ['[CRAWL]', '[GRAB]'],
+                'vocal': ['[BABBLE]', '[MAMA]', '[DADA]'],
+                'social': ['[WAVE]', '[PLAY]'],
+            },
+            # Add more stage-appropriate responses for other stages
+            # ...
+        }
+        return stage_responses.get(self.current_stage, {})

@@ -3,10 +3,15 @@ import torch
 from torch import nn
 
 class ReplayOptimizer:
-    def __init__(self, memory_capacity=10000):
+    def __init__(self, memory_capacity=10000, device=None):
+        if device is None:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = device
+            
         self.memory = []
         self.capacity = memory_capacity
-        self.importance_weights = nn.Parameter(torch.ones(memory_capacity, device='cuda'))
+        self.importance_weights = nn.Parameter(torch.ones(memory_capacity, device=self.device))
         self.decay_factor = 0.99
 
     def add_experience(self, experience):
@@ -33,6 +38,6 @@ class ReplayOptimizer:
             prune_idx = torch.argsort(self.importance_weights)[:len(self.memory) // 20]
             self.memory = [m for i, m in enumerate(self.memory) if i not in prune_idx]
             self.importance_weights = nn.Parameter(
-                torch.ones(len(self.memory), device='cuda'),
+                torch.ones(len(self.memory), device=self.device),
                 requires_grad=True
             )
