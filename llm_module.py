@@ -112,3 +112,20 @@ def chat_completion(
         print(f"Unexpected error: {e}")
         return DEFAULT_RESPONSE
     return None
+
+def _get_default_response(structured: bool = False) -> Dict[str, Any]:
+    """Get default response in case of errors."""
+    if structured:
+        return {
+            'response_text': 'I need a moment to think.',
+            'emotional_context': {
+                'happiness': 0.5,
+                'sadness': 0.5,
+                'anger': 0.5,
+                'fear': 0.5
+            },
+            'reward_score': 0.5,
+            'complexity_rating': 0.5,
+            'self_critique_score': 0.5
+        }
+    return {'text': 'I need a moment to think.'}

@@ -1,10 +1,11 @@
 import torch
-from torch import nn
+import torch.nn as nn
 from collections import deque
 import random
 import time
 import math
 from typing import Dict, List, Tuple
+import config
 from replay_system import ReplayOptimizer
 
 class MemoryCluster:
@@ -45,13 +46,26 @@ class DifferentiableMemory(nn.Module):
             nn.Linear(256, 128)
         )
         
-        # Importance network remains the same (expects concatenated size 906)
+        # Standardize input dimensions
+        self.input_dim = embedding_dim
+        self.internal_state_dim = 128
+        self.emotional_state_dim = 4
+        
+        total_input_dim = (
+            self.input_dim +            # Input embedding
+            self.internal_state_dim +   # Internal state
+            1 +                         # Reward
+            1 +                         # Timestamp
+            self.emotional_state_dim    # Emotional state
+        )
+        
+        # Updated importance network
         self.importance_net = nn.Sequential(
-            nn.Linear(906, 64),  # 902 (memory entry) + 4 (emotional_state) = 906
+            nn.Linear(total_input_dim, 64),
             nn.GELU(),
             nn.Linear(64, 1),
             nn.Sigmoid()
-        )
+        ).to(self.device)
         
         # Updated consolidation network: maps internal state (128) -> 128
         self.consolidation_net = nn.Sequential(
@@ -69,14 +83,56 @@ class DifferentiableMemory(nn.Module):
         
     def compute_memory_importance(self, memory_embedding: torch.Tensor, 
                                 emotional_state: torch.Tensor) -> float:
-        # Ensure both tensors are on the same device
-        memory_embedding = memory_embedding.to(self.device)
-        emotional_state = emotional_state.to(self.device)
-        
-        combined = torch.cat([memory_embedding, emotional_state])
-        importance = self.importance_net(combined)
-        emotional_weight = torch.sum(emotional_state * self.emotional_importance)
-        return importance.item() * emotional_weight.item()
+        """Compute importance score for a memory with dimension checks."""
+        try:
+            # Ensure inputs are on correct device and have correct shape
+            memory_embedding = memory_embedding.to(self.device)
+            emotional_state = emotional_state.to(self.device)
+            
+            # Reshape memory embedding
+            if memory_embedding.dim() == 2:
+                memory_embedding = memory_embedding.squeeze(0)
+            
+            # Ensure memory embedding has correct dimension
+            if memory_embedding.shape[0] != self.input_dim:
+                if memory_embedding.shape[0] > self.input_dim:
+                    memory_embedding = memory_embedding[:self.input_dim]
+                else:
+                    padding = torch.zeros(self.input_dim - memory_embedding.shape[0], 
+                                       device=self.device)
+                    memory_embedding = torch.cat([memory_embedding, padding])
+            
+            # Reshape emotional state
+            if emotional_state.dim() == 2:
+                emotional_state = emotional_state.squeeze(0)
+            if emotional_state.shape[0] != self.emotional_state_dim:
+                emotional_state = torch.zeros(self.emotional_state_dim, device=self.device)
+            
+            # Create properly sized tensors
+            internal_state = torch.zeros(self.internal_state_dim, device=self.device)
+            reward = torch.tensor([0.5], device=self.device)
+            timestamp = torch.tensor([time.time()], device=self.device)
+            
+            # Concatenate all components
+            combined = torch.cat([
+                memory_embedding,
+                internal_state,
+                reward,
+                timestamp,
+                emotional_state
+            ])
+            
+            # Add batch dimension and compute importance
+            combined = combined.unsqueeze(0)
+            importance = self.importance_net(combined)
+            emotional_weight = torch.mean(emotional_state)
+            
+            return importance.item() * emotional_weight.item()
+            
+        except Exception as e:
+            print(f"Error in compute_memory_importance: {str(e)}")
+            print(f"Memory shape: {memory_embedding.shape}, Emotional shape: {emotional_state.shape}")
+            return 0.5
     
     def find_similar_cluster(self, memory_embedding: torch.Tensor) -> Tuple[MemoryCluster, float]:
         if not self.long_term_clusters:

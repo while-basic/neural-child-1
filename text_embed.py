@@ -1,28 +1,34 @@
 # text_embed.py
 
-import requests
-from typing import List, Dict, Union, Optional
-from config import EMBEDDING_SERVER_URL, EMBEDDING_DIM, DEFAULT_EMBEDDING
-import numpy as np
+import json
+from typing import List, Dict, Any
+from config import DEFAULT_EMBEDDING
+from local_embeddings import SimpleEmbeddingService, embedding_service  # Update import
 
-def get_embeddings(text_input: Union[str, List[str]], 
-                  model: str = "text-embedding-nomic-embed-text-v1.5",
-                  server_url: str = EMBEDDING_SERVER_URL) -> List[Dict]: #Using a local Embedding model in LM Studio for embedding purposes.
-    try:
-        payload_input = [text_input] if isinstance(text_input, str) else text_input
-        
-        response = requests.post(
-            f"{server_url}/v1/embeddings",
-            json={"model": model, "input": payload_input},
-            timeout=30
-        )
-        if response.status_code == 200:
-            return response.json().get("data", [])
-        print(f"Embedding server error: {response.status_code}")
-    except requests.exceptions.RequestException as e:
-        print(f"Oops! Embedding server isn't playing nice: {e}")
-    except Exception as e:
-        print(f"Something went sideways: {e}")
+def get_embeddings(text: str) -> List[Dict[str, Any]]:
+    """Get embeddings for a given text using local embedding service."""
+    if not text:
+        print("Warning: Empty text provided to get_embeddings")
+        return [{'embedding': DEFAULT_EMBEDDING}]
     
-    # Return default embedding with correct dimensions
-    return [{'embedding': np.zeros(EMBEDDING_DIM).tolist()}]
+    try:
+        embedding = embedding_service.get_embedding(text)
+        
+        # Validate embedding dimension
+        if len(embedding) != config.EMBEDDING_DIM:
+            print(f"Warning: Invalid embedding dimension: {len(embedding)}, expected {config.EMBEDDING_DIM}")
+            return [{'embedding': DEFAULT_EMBEDDING}]
+            
+        return [{'embedding': embedding}]
+    except Exception as e:
+        print(f"Embedding error: {e}")
+        return [{'embedding': DEFAULT_EMBEDDING}]
+
+def batch_get_embeddings(texts: List[str]) -> List[Dict[str, Any]]:
+    """Get embeddings for multiple texts."""
+    try:
+        embeddings = embedding_service.batch_encode(texts)
+        return [{'embedding': emb} for emb in embeddings]
+    except Exception as e:
+        print(f"Batch embedding error: {e}")
+        return [{'embedding': DEFAULT_EMBEDDING} for _ in texts]
