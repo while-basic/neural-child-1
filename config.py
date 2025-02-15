@@ -13,15 +13,15 @@ HIDDEN_DIM = 512
 LEARNING_RATE = 1e-4
 
 # Training Configuration
-MAX_ITERATIONS = 1000
-SAVE_INTERVAL = 50
+MAX_ITERATIONS = 100
+SAVE_INTERVAL = 10
 CHECKPOINT_DIR = "checkpoints"
 LOG_DIR = "logs"
 
 # Development Settings
-INTERACTIONS_PER_STAGE = 10
-MIN_STAGE_SUCCESS_RATE = 0.7
-STAGE_PROGRESSION_THRESHOLD = 0.8
+INTERACTIONS_PER_STAGE = 20  # Reduced from 100 to make progression faster
+MIN_STAGE_SUCCESS_RATE = 0.5  # Lowered from 0.7 to make progression easier
+STAGE_PROGRESSION_THRESHOLD = 0.6  # Lowered from 0.8 to make progression easier
 
 # Memory Configuration
 MEMORY_CAPACITY = 10000

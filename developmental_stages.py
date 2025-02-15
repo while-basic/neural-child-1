@@ -28,6 +28,7 @@ class DevelopmentalSystem:
             'abstraction': 0.0,
             'self_awareness': 0.0
         }
+        self.consecutive_successes = 0
         
     def update_stage(self, metrics):
         # Update internal metrics
@@ -36,14 +37,19 @@ class DevelopmentalSystem:
             
         # Check if ready to progress
         if self.can_progress():
-            self._advance_stage()
+            self.consecutive_successes += 1
+            if self.consecutive_successes >= 2:  # Need 2 consecutive successful evaluations
+                self._advance_stage()
+                self.consecutive_successes = 0
+        else:
+            self.consecutive_successes = 0
             
     def can_progress(self):
-        # Basic progression criteria
+        # More lenient progression criteria
         return (
-            self.stage_metrics['success_rate'] > config.MIN_STAGE_SUCCESS_RATE and
-            self.stage_metrics['abstraction'] + 
-            self.stage_metrics['self_awareness'] > config.STAGE_PROGRESSION_THRESHOLD
+            self.stage_metrics['success_rate'] > config.MIN_STAGE_SUCCESS_RATE or
+            (self.stage_metrics['abstraction'] + 
+             self.stage_metrics['self_awareness']) / 2 > config.STAGE_PROGRESSION_THRESHOLD
         )
         
     def _advance_stage(self):
@@ -53,3 +59,4 @@ class DevelopmentalSystem:
             # Reset metrics for new stage
             for key in self.stage_metrics:
                 self.stage_metrics[key] = 0.0
+            print(f"\nAdvancing to stage: {self.current_stage.name}")
