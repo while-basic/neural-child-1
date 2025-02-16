@@ -277,6 +277,11 @@ class DigitalChild:
         self.autonomous_learner = AutonomousLearner(self)
         self.sandbox = SandboxManager()
         
+        # Ensure model is in eval mode and gradients are disabled
+        self.brain.eval()
+        for param in self.brain.parameters():
+            param.requires_grad = False
+
     def update_emotions(self, mother_vector):
         """Update emotional state based on mother's emotional vector."""
         # Convert mother_vector to tensor if it's a list
