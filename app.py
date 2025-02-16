@@ -7,8 +7,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
 import numpy as np
-from developmental_stages import DevelopmentalStage
-from config import STAGE_DEFINITIONS
+from developmental_stages import DevelopmentalStage, DevelopmentalSystem
 import json
 import torch.serialization
 import requests
@@ -28,7 +27,13 @@ def validate_stage_definitions():
     """Validate that all developmental stages have proper definitions"""
     missing_stages = []
     for stage in DevelopmentalStage:
-        if stage not in STAGE_DEFINITIONS:
+        try:
+            # Create a temporary system to test stage definitions
+            system = DevelopmentalSystem()
+            system.current_stage = stage
+            # Try to get requirements for each stage
+            system.get_stage_requirements()
+        except Exception as e:
             missing_stages.append(stage.name)
     return missing_stages
 
@@ -255,15 +260,12 @@ def render_upcoming_milestones():
             st.error("Invalid stage type")
             return
         
-        # Get stage requirements with safe access
-        stage_reqs = STAGE_DEFINITIONS.get(stage)
-        if not stage_reqs:
-            st.warning(f"No stage definitions found for {stage.name}")
-            return
+        # Get stage requirements using the new API
+        stage_reqs = st.session_state.child.curriculum.get_stage_requirements()
         
         # Display current milestones
         st.write("Current Milestones:")
-        current_milestones = getattr(stage_reqs, 'current_milestones', [])
+        current_milestones = stage_reqs.get('current_milestones', [])
         if current_milestones:
             for milestone in current_milestones:
                 st.write(f"✓ {milestone}")
@@ -272,7 +274,7 @@ def render_upcoming_milestones():
         
         # Display upcoming milestones
         st.write("\nUpcoming Milestones:")
-        upcoming_milestones = getattr(stage_reqs, 'upcoming_milestones', [])
+        upcoming_milestones = stage_reqs.get('upcoming_milestones', [])
         if upcoming_milestones:
             for milestone in upcoming_milestones:
                 st.write(f"○ {milestone}")
@@ -282,15 +284,17 @@ def render_upcoming_milestones():
         # Display next stage milestones if available
         if stage.value < len(DevelopmentalStage) - 1:
             try:
+                # Create a temporary system for next stage
                 next_stage = DevelopmentalStage(stage.value + 1)
-                next_stage_reqs = STAGE_DEFINITIONS.get(next_stage)
+                temp_system = DevelopmentalSystem()
+                temp_system.current_stage = next_stage
+                next_stage_reqs = temp_system.get_stage_requirements()
                 
-                if next_stage_reqs:
-                    next_milestones = getattr(next_stage_reqs, 'current_milestones', [])
-                    if next_milestones:
-                        st.write(f"\nNext Stage ({next_stage.name}) Milestones:")
-                        for milestone in next_milestones:
-                            st.write(f"◇ {milestone}")
+                next_milestones = next_stage_reqs.get('current_milestones', [])
+                if next_milestones:
+                    st.write(f"\nNext Stage ({next_stage.name}) Milestones:")
+                    for milestone in next_milestones:
+                        st.write(f"◇ {milestone}")
             except Exception as e:
                 if st.sidebar.checkbox("Debug Mode", value=False):
                     st.error(f"Error loading next stage: {str(e)}")
