@@ -12,8 +12,10 @@ from self_supervised_trainer import AutonomousTrainer
 from text_embed import get_embeddings
 from autonomous_learner import AutonomousLearner
 from sandbox_manager import SandboxManager
+from training_system import DevelopmentalTrainer
 import psutil
 from config import config  # Import config object directly
+from emotional_regulation import EmotionalRegulation
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -273,6 +275,31 @@ class DigitalChild:
         self.emotional_state = torch.zeros(4, device=self.device)
         self.sandbox = SandboxManager()
         self.autonomous_learner = AutonomousLearner(self)
+        
+        # Create emotional regulation module
+        self.emotional_regulation = EmotionalRegulation(
+            emotion_dim=4,  # Default to 4 primary emotions
+            hidden_dim=32,  # Default memory dimension
+            device=self.device
+        )
+        
+        # Initialize the trainer
+        self.trainer = DevelopmentalTrainer(
+            child_model=self.brain,
+            memory=self.memory,
+            emotional_regulation=self.emotional_regulation,
+            curriculum_manager=self.curriculum,
+            mother_llm=self.mother,
+            metacognition_system=MetacognitionSystem(),
+            config={
+                'device': self.device,
+                'learning_rate': getattr(config, 'learning_rate', 3e-4),
+                'weight_decay': getattr(config, 'weight_decay', 0.01),
+                'gradient_clip_norm': getattr(config, 'gradient_clip_norm', 1.0),
+                'warmup_steps': getattr(config, 'warmup_steps', 1000),
+                'checkpoint_interval': getattr(config, 'checkpoint_interval', 100)
+            }
+        )
         
         # Ensure model is in eval mode and gradients are disabled
         self.brain.eval()

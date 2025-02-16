@@ -12,7 +12,10 @@ import torch
 from openai import OpenAI
 
 # Initialize OpenAI client for LM Studio
-client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
+client = OpenAI(
+    base_url="http://localhost:1234/v1",
+    api_key="not-needed"
+)
 
 def create_retry_session(
     retries: int = 3,
@@ -36,11 +39,10 @@ def create_retry_session(
 def chat_completion(
     system_prompt: str,
     user_prompt: str,
-    model: str = "unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF",  # Updated default model
+    model: str = "mistral",  # Updated to use Mistral model
     temperature: float = 0.7,
-    max_tokens: int = -1,
-    stream: bool = False,  # Changed default to False since we're using structured output
-    server_url: str = "http://localhost:1234/v1/chat/completions",
+    max_tokens: int = 1000,
+    stream: bool = False,
     structured_output: bool = False
 ) -> Optional[Dict[str, Any]]:
     """
