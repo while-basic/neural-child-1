@@ -265,17 +265,15 @@ class MotherLLM:
 
 class DigitalChild:
     def __init__(self):
-        self.brain = DynamicNeuralChild(device=device)
-        self.memory = DifferentiableMemory()
-        self.morality = MoralPolicyNetwork(device=device)
-        self.metacognition = MetacognitionSystem()
-        self.curriculum = DevelopmentalSystem()
-        self.trainer = AutonomousTrainer(self.brain, self.memory, self.morality)
-        self.mother = MotherLLM()
         self.birth_date = datetime.now()
-        self.emotional_state = torch.zeros(4, device=device)
-        self.autonomous_learner = AutonomousLearner(self)
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.brain = DynamicNeuralChild(device=self.device)
+        self.mother = MotherLLM()
+        self.memory = DifferentiableMemory()
+        self.curriculum = DevelopmentalSystem()
+        self.emotional_state = torch.zeros(4, device=self.device)
         self.sandbox = SandboxManager()
+        self.autonomous_learner = AutonomousLearner(self)
         
         # Ensure model is in eval mode and gradients are disabled
         self.brain.eval()
@@ -286,13 +284,13 @@ class DigitalChild:
         """Update emotional state based on mother's emotional vector."""
         # Convert mother_vector to tensor if it's a list
         if isinstance(mother_vector, list):
-            mother_vector = torch.tensor(mother_vector, device=device)
+            mother_vector = torch.tensor(mother_vector, device=self.device)
         
         # Ensure both tensors are the same shape and device
         if mother_vector.dim() == 0:
             mother_vector = mother_vector.unsqueeze(0)
         if mother_vector.dim() == 1:
-            mother_vector = mother_vector.to(device)
+            mother_vector = mother_vector.to(self.device)
             
         # Calculate delta and update emotional state
         delta = mother_vector - self.emotional_state
@@ -342,15 +340,15 @@ class DigitalChild:
         try:
             embeddings = get_embeddings(stimulus['text'])
             if not embeddings:  # If empty list returned
-                return torch.zeros(1, config.EMBEDDING_DIM, device=device)
-            return torch.tensor(embeddings[0]['embedding'], device=device).unsqueeze(0)
+                return torch.zeros(1, config.EMBEDDING_DIM, device=self.device)
+            return torch.tensor(embeddings[0]['embedding'], device=self.device).unsqueeze(0)
         except (IndexError, KeyError, Exception) as e:
             print(f"Error in perceive: {e}")
             # Return default embedding vector
-            return torch.zeros(1, config.EMBEDDING_DIM, device=device)
+            return torch.zeros(1, config.EMBEDDING_DIM, device=self.device)
     
     def respond(self, perception):
-        with torch.amp.autocast(device.type):
+        with torch.amp.autocast(self.device.type):
             return self.brain(perception)
     
     def learn(self, mother_feedback):

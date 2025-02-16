@@ -35,6 +35,7 @@ class DynamicNeuralChild(nn.Module):
         super().__init__()
         if device is None:
             device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = device
         
         # Core neural components
         self.encoder = nn.Sequential(
@@ -42,7 +43,7 @@ class DynamicNeuralChild(nn.Module):
             nn.LayerNorm(config.HIDDEN_DIM),
             nn.ReLU(),
             nn.Dropout(0.1)
-        )
+        ).to(device)
         
         # Create custom transformer encoder layer and encoder
         encoder_layer = CustomTransformerEncoderLayer(
@@ -50,8 +51,8 @@ class DynamicNeuralChild(nn.Module):
             nhead=8,
             dim_feedforward=2048,
             dropout=0.1
-        )
-        self.processor = CustomTransformerEncoder(encoder_layer, num_layers=4)
+        ).to(device)
+        self.processor = CustomTransformerEncoder(encoder_layer, num_layers=4).to(device)
         
         self.decoder = nn.Sequential(
             nn.Linear(config.HIDDEN_DIM, config.HIDDEN_DIM // 2),
@@ -59,7 +60,7 @@ class DynamicNeuralChild(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(config.HIDDEN_DIM // 2, config.EMBEDDING_DIM)
-        )
+        ).to(device)
         
         # Psychological systems
         self.attachment = AttachmentSystem(config.HIDDEN_DIM).to(device)
@@ -71,6 +72,9 @@ class DynamicNeuralChild(nn.Module):
         self.attention_weights = None
         
     def forward(self, x):
+        # Ensure input is on the correct device
+        x = x.to(self.device)
+        
         # Encode input
         encoded = self.encoder(x)
         
