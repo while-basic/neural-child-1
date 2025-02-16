@@ -739,6 +739,94 @@ def render_sentience_metrics():
         fig.update_layout(height=300)
         st.plotly_chart(fig, use_container_width=True)
 
+def log_developmental_event(event_type: str, description: str, importance: float = 1.0):
+    """Log a developmental event with timestamp and details"""
+    if 'developmental_events' not in st.session_state:
+        st.session_state.developmental_events = []
+    
+    # Get current sentience level for context
+    sentience_level = calculate_sentience_level()
+    
+    event = {
+        'timestamp': datetime.now(),
+        'type': event_type,
+        'description': description,
+        'importance': importance,
+        'stage': st.session_state.child.curriculum.current_stage.name,
+        'age': format_detailed_age(st.session_state.birth_time),
+        'sentience_level': sentience_level
+    }
+    
+    st.session_state.developmental_events.append(event)
+
+def render_event_logs():
+    """Display developmental event logs"""
+    st.subheader("📝 Developmental Event Logs")
+    
+    if 'developmental_events' not in st.session_state:
+        st.session_state.developmental_events = []
+    
+    if not st.session_state.developmental_events:
+        st.info("No developmental events recorded yet.")
+        return
+    
+    # Create tabs for different event views
+    event_tabs = st.tabs(["Recent Events", "Important Events", "Timeline View"])
+    
+    with event_tabs[0]:  # Recent Events
+        st.subheader("Most Recent Events")
+        for event in reversed(st.session_state.developmental_events[-5:]):
+            with st.expander(
+                f"[{event['type']}] {event['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}",
+                expanded=False
+            ):
+                st.write(f"**Description:** {event['description']}")
+                st.write(f"**Stage:** {event['stage']}")
+                st.write(f"**Age:** {event['age']}")
+                st.write(f"**Sentience Level:** {event['sentience_level']:.1f}")
+                st.progress(event['importance'])
+    
+    with event_tabs[1]:  # Important Events
+        st.subheader("High Impact Events")
+        important_events = [e for e in st.session_state.developmental_events if e['importance'] > 0.7]
+        for event in reversed(important_events):
+            with st.expander(
+                f"[{event['type']}] {event['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}",
+                expanded=False
+            ):
+                st.write(f"**Description:** {event['description']}")
+                st.write(f"**Stage:** {event['stage']}")
+                st.write(f"**Age:** {event['age']}")
+                st.write(f"**Sentience Level:** {event['sentience_level']:.1f}")
+                st.progress(event['importance'])
+    
+    with event_tabs[2]:  # Timeline View
+        st.subheader("Event Timeline")
+        # Create timeline data
+        timeline_data = pd.DataFrame([
+            {
+                'Start': e['timestamp'],
+                'End': e['timestamp'],
+                'Event': f"{e['type']}: {e['description']}",
+                'Importance': e['importance'],
+                'Stage': e['stage']
+            }
+            for e in st.session_state.developmental_events
+        ])
+        
+        if not timeline_data.empty:
+            fig = px.timeline(
+                timeline_data,
+                x_start="Start",
+                x_end="End",
+                y="Event",
+                color="Stage",
+                title="Developmental Event Timeline",
+                color_discrete_sequence=px.colors.qualitative.Set3
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+
 def main():
     # Add time controls to sidebar
     add_time_controls()
@@ -1027,6 +1115,39 @@ def main():
                         st.write("You:", interaction_data['user'])
                         st.write("Mother:", interaction_data['mother'])
                         st.write("Child:", interaction_data['child'])
+                    
+                    # Log developmental events based on interaction outcomes
+                    if stimulus.get('effectiveness', 0.5) > 0.8:
+                        log_developmental_event(
+                            "High Impact Interaction",
+                            f"Exceptional response to {selected_template if selected_template != 'Custom' else 'interaction'}",
+                            importance=stimulus.get('effectiveness', 0.5)
+                        )
+                    
+                    # Log milestone achievements
+                    if any(milestone in response for milestone in current_milestones):
+                        log_developmental_event(
+                            "Milestone Achieved",
+                            f"Demonstrated mastery of current stage milestone",
+                            importance=0.9
+                        )
+                    
+                    # Log significant emotional developments
+                    emotional_state = st.session_state.child.emotional_state.cpu().numpy()
+                    if np.max(emotional_state) > 0.8:
+                        log_developmental_event(
+                            "Emotional Development",
+                            f"Showed strong emotional response: {st.session_state.child.express_feeling()}",
+                            importance=0.7
+                        )
+                    
+                    # Log learning breakthroughs
+                    if stimulus.get('complexity', 0.0) > 0.7 and stimulus.get('effectiveness', 0.0) > 0.7:
+                        log_developmental_event(
+                            "Learning Breakthrough",
+                            f"Successfully handled complex interaction",
+                            importance=0.8
+                        )
                 
                 except Exception as e:
                     st.error(f"Error during interaction: {str(e)}")
@@ -1107,6 +1228,9 @@ def main():
     
     with tabs[4]:  # Analytics Tab
         st.subheader("Development Analytics")
+        
+        # Add Event Logs
+        render_event_logs()
         
         # Add Sentience Metrics
         render_sentience_metrics()
