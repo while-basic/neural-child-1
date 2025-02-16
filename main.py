@@ -341,7 +341,23 @@ class DigitalChild:
             embeddings = get_embeddings(stimulus['text'])
             if not embeddings:  # If empty list returned
                 return torch.zeros(1, config.EMBEDDING_DIM, device=self.device)
-            return torch.tensor(embeddings[0]['embedding'], device=self.device).unsqueeze(0)
+                
+            # Get the embedding and convert to tensor
+            embedding = torch.tensor(embeddings[0]['embedding'], device=self.device)  # [embedding_dim]
+            
+            # Add batch dimension
+            embedding = embedding.unsqueeze(0)  # [1, embedding_dim]
+            
+            # Ensure correct dimension
+            if embedding.size(1) != config.EMBEDDING_DIM:
+                if embedding.size(1) > config.EMBEDDING_DIM:
+                    embedding = embedding[:, :config.EMBEDDING_DIM]
+                else:
+                    padding = torch.zeros(1, config.EMBEDDING_DIM - embedding.size(1), device=self.device)
+                    embedding = torch.cat([embedding, padding], dim=1)
+            
+            return embedding  # [1, embedding_dim]
+            
         except (IndexError, KeyError, Exception) as e:
             print(f"Error in perceive: {e}")
             # Return default embedding vector

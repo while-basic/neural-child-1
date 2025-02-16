@@ -10,6 +10,7 @@ import numpy as np
 from developmental_stages import DevelopmentalStage
 from config import STAGE_DEFINITIONS
 import json
+import torch.serialization
 
 try:
     from main import DigitalChild, MotherLLM
@@ -37,6 +38,7 @@ if DigitalChild is not None:
                 st.stop()
             
             st.session_state.child = DigitalChild()
+            st.session_state.birth_time = datetime.now()  # Store birth time in session state
             st.session_state.mother = MotherLLM()
             st.session_state.conversation_history = []
             st.session_state.emotional_history = []
@@ -373,6 +375,31 @@ def format_json_response(response_data):
     except Exception:
         return str(response_data)
 
+def format_detailed_age(birth_time):
+    """Format age with detailed breakdown"""
+    now = datetime.now()
+    delta = now - birth_time
+    
+    weeks = delta.days // 7
+    remaining_days = delta.days % 7
+    hours = delta.seconds // 3600
+    minutes = (delta.seconds % 3600) // 60
+    seconds = delta.seconds % 60
+    
+    parts = []
+    if weeks > 0:
+        parts.append(f"{weeks}w")
+    if remaining_days > 0:
+        parts.append(f"{remaining_days}d")
+    if hours > 0:
+        parts.append(f"{hours}h")
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    if seconds > 0 or not parts:
+        parts.append(f"{seconds}s")
+    
+    return " ".join(parts)
+
 def main():
     if DigitalChild is None:
         st.error("Cannot run application: Required modules not found")
@@ -387,7 +414,8 @@ def main():
     # Top-level metrics dashboard
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Current Age", f"{st.session_state.child.age()} months")
+        # Use birth_time from session state instead of child object
+        st.metric("Age", format_detailed_age(st.session_state.birth_time))
     with col2:
         st.metric("Development Stage", st.session_state.child.curriculum.current_stage.name)
     with col3:
@@ -409,6 +437,10 @@ def main():
         
         with col1:
             st.subheader("Current State & Emotions")
+            # Use birth_time from session state
+            birth_time = format_detailed_age(st.session_state.birth_time)
+            st.info(f"🎂 Time since birth: {birth_time}")
+            
             current_feeling = st.session_state.child.express_feeling()
             st.info(f"Child is feeling: {current_feeling}")
             
@@ -946,39 +978,78 @@ def main():
     
     with save_load_cols[0]:
         if st.button("Save State", use_container_width=True):
-            # Save both child and session state
-            save_data = {
-                'child_state': st.session_state.child.brain.state_dict(),
-                'conversation_history': st.session_state.conversation_history,
-                'emotional_history': st.session_state.emotional_history,
-                'learning_history': st.session_state.learning_history,
-                'milestone_history': st.session_state.milestone_history,
-                'complexity_history': st.session_state.complexity_history,
-                'teaching_history': st.session_state.teaching_history,
-                'development_metrics': st.session_state.development_metrics
-            }
-            save_path = f"digital_child_{st.session_state.child.age()}mo_full.pth"
-            torch.save(save_data, save_path)
-            st.success(f"Full state saved to {save_path}")
+            try:
+                # Convert datetime objects to ISO format strings for saving
+                conversation_history = [
+                    {**item, 'timestamp': item['timestamp'].isoformat()}
+                    for item in st.session_state.conversation_history
+                ]
+                
+                teaching_history = [
+                    {**item, 'date': item['date'].isoformat()}
+                    for item in st.session_state.teaching_history
+                ]
+                
+                # Save both child and session state
+                save_data = {
+                    'child_state': st.session_state.child.brain.state_dict(),
+                    'conversation_history': conversation_history,
+                    'emotional_history': st.session_state.emotional_history,
+                    'learning_history': st.session_state.learning_history,
+                    'milestone_history': st.session_state.milestone_history,
+                    'complexity_history': st.session_state.complexity_history,
+                    'teaching_history': teaching_history,
+                    'development_metrics': st.session_state.development_metrics
+                }
+                
+                save_path = f"digital_child_{st.session_state.child.age()}mo_full.pth"
+                torch.save(save_data, save_path)
+                st.success(f"Full state saved to {save_path}")
+            except Exception as e:
+                st.error(f"Error saving state: {str(e)}")
+                if st.sidebar.checkbox("Debug Mode", value=False):
+                    st.exception(e)
     
     with save_load_cols[1]:
         uploaded_file = st.file_uploader("Load State", type="pth")
         if uploaded_file is not None:
             try:
-                save_data = torch.load(uploaded_file)
+                # Add datetime to safe globals
+                torch.serialization.add_safe_globals(['datetime'])
+                
+                # Load with weights_only=False to handle datetime objects
+                save_data = torch.load(
+                    uploaded_file,
+                    weights_only=False,
+                    map_location=st.session_state.child.device
+                )
+                
                 # Load child state
                 st.session_state.child.brain.load_state_dict(save_data['child_state'])
-                # Load session state
-                st.session_state.conversation_history = save_data['conversation_history']
+                
+                # Load session state with datetime conversion
+                st.session_state.conversation_history = [
+                    {**item, 'timestamp': datetime.fromisoformat(item['timestamp']) 
+                     if isinstance(item['timestamp'], str) else item['timestamp']}
+                    for item in save_data['conversation_history']
+                ]
                 st.session_state.emotional_history = save_data['emotional_history']
                 st.session_state.learning_history = save_data['learning_history']
                 st.session_state.milestone_history = save_data['milestone_history']
                 st.session_state.complexity_history = save_data['complexity_history']
-                st.session_state.teaching_history = save_data['teaching_history']
+                
+                # Convert teaching history timestamps
+                st.session_state.teaching_history = [
+                    {**item, 'date': datetime.fromisoformat(item['date']) 
+                     if isinstance(item['date'], str) else item['date']}
+                    for item in save_data['teaching_history']
+                ]
+                
                 st.session_state.development_metrics = save_data['development_metrics']
                 st.success("Full state loaded successfully!")
             except Exception as e:
                 st.error(f"Error loading state: {str(e)}")
+                st.info("If you trust this file, try restarting the application and loading again.")
     
     with save_load_cols[2]:
         st.info("Save/Load functionality preserves all history and development progress.")

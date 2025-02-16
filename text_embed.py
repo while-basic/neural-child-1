@@ -2,8 +2,10 @@
 
 import json
 from typing import List, Dict, Any
-from config import DEFAULT_EMBEDDING, config
-from local_embeddings import SimpleEmbeddingService, embedding_service  # Update import
+import torch
+import torch.nn.functional as F
+from config import DEFAULT_EMBEDDING, config, EMBEDDING_DIM
+from local_embeddings import SimpleEmbeddingService, embedding_service
 
 def get_embeddings(text: str) -> List[Dict[str, Any]]:
     """Get embeddings for a given text using local embedding service."""
@@ -14,10 +16,18 @@ def get_embeddings(text: str) -> List[Dict[str, Any]]:
     try:
         embedding = embedding_service.get_embedding(text)
         
-        # Validate embedding dimension
-        if len(embedding) != config.embedding_dim:
-            print(f"Warning: Invalid embedding dimension: {len(embedding)}, expected {config.embedding_dim}")
-            return [{'embedding': DEFAULT_EMBEDDING}]
+        # Convert to tensor for dimension handling
+        embedding_tensor = torch.tensor(embedding)
+        
+        # Ensure correct dimension
+        if embedding_tensor.size(0) != EMBEDDING_DIM:
+            if embedding_tensor.size(0) > EMBEDDING_DIM:
+                embedding_tensor = embedding_tensor[:EMBEDDING_DIM]
+            else:
+                embedding_tensor = F.pad(embedding_tensor, (0, EMBEDDING_DIM - embedding_tensor.size(0)))
+        
+        # Convert back to list for return
+        embedding = embedding_tensor.tolist()
             
         return [{'embedding': embedding}]
     except Exception as e:
