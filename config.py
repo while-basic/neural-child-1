@@ -3,6 +3,18 @@ from dataclasses import dataclass
 from typing import List, Dict
 from developmental_stages import DevelopmentalStage
 
+class Config:
+    # Add your configuration parameters here
+    def __init__(self):
+        self.embedding_dim = 768
+        self.max_sequence_length = 512
+        self.batch_size = 32
+        self.learning_rate = 1e-4
+        # Add other configuration parameters as needed
+
+# Create a global config instance
+config = Config()
+
 # Server configurations
 EMBEDDING_SERVER_URL = "http://localhost:1234"  # Change as needed
 CHAT_SERVER_URL = "http://localhost:1234"       # Change as needed

@@ -10,8 +10,11 @@ from moral_network import MoralPolicyNetwork
 from metacognition import MetacognitionSystem
 from self_supervised_trainer import AutonomousTrainer
 from text_embed import get_embeddings
+from autonomous_learner import AutonomousLearner
+from sandbox_manager import SandboxManager
 import psutil
 import config
+from config import config
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -271,6 +274,8 @@ class DigitalChild:
         self.mother = MotherLLM()
         self.birth_date = datetime.now()
         self.emotional_state = torch.zeros(4, device=device)
+        self.autonomous_learner = AutonomousLearner(self)
+        self.sandbox = SandboxManager()
         
     def update_emotions(self, mother_vector):
         """Update emotional state based on mother's emotional vector."""
@@ -356,6 +361,32 @@ class DigitalChild:
     def age(self):
         return (datetime.now() - self.birth_date).days // 30  # months
 
+    def autonomous_mode(self):
+        """Run in autonomous learning mode"""
+        try:
+            container_id = self.sandbox.create_sandbox()
+            print(f"Started autonomous learning in sandbox {container_id}")
+            
+            while True:
+                # Self-directed learning cycle
+                learning_results = self.autonomous_learner.learn_independently()
+                
+                # Monitor resource usage
+                resources = self.sandbox.monitor_resources()
+                
+                # Save progress periodically
+                if len(self.memory.experiences) % 100 == 0:
+                    self.sandbox.save_state(f"autonomous_checkpoint_{self.age()}mo.pth")
+                
+                # Print status
+                print(f"\rAge: {self.age()}mo | Performance: {learning_results['performance']:.2f} | "
+                      f"Memory Usage: {resources.get('memory_usage', 0) / 1024 / 1024:.1f}MB", end='')
+                
+        except KeyboardInterrupt:
+            print("\nGracefully shutting down autonomous learning...")
+        finally:
+            self.sandbox.cleanup()
+
 def main():
     child = DigitalChild()
     telemetry = {'loss': [], 'memory_usage': [], 'moral_scores': []}
@@ -375,86 +406,94 @@ def main():
         'self_awareness': 0.0
     }
     
-    try:
-        while total_stages_completed < max_stages:
-            current_stage = child.curriculum.current_stage
-            current_stage_interactions = 0
-            
-            # Complete required interactions for current stage
-            while current_stage_interactions < interactions_per_stage:
-                try:
-                    # Generate and process response
-                    stimulus = child.mother.generate_stimulus(current_stage, child.express_feeling())
-                    child.update_emotions(stimulus['emotional_vector'])
-                    perception = child.perceive(stimulus)
-                    response = child.respond(perception)
-                    
-                    # Get feedback
-                    feedback = chat_completion(
-                        system_prompt=f"Evaluate this response from your {current_stage.name.lower()} digital child: {response}",
-                        user_prompt=f"Child expressed {child.express_feeling()}. Provide nurturing feedback:",
-                        structured_output=True
-                    )
-                    
-                    # Update metrics
-                    stage_metrics['success_rate'] += feedback.get('reward_score', 0.5)
-                    stage_metrics['abstraction'] += feedback.get('complexity_rating', 0.5)
-                    stage_metrics['self_awareness'] += feedback.get('self_critique_score', 0.5)
-                    
-                    # Learning step
-                    loss = child.learn({
-                        'input': perception,
-                        'internal_state': response,
-                        'reward': feedback.get('reward_score', 0.5)
-                    })
-                    
-                    # Update counters
-                    current_stage_interactions += 1
-                    
-                    # Average metrics for stage progression
-                    if current_stage_interactions >= interactions_per_stage:
-                        # Calculate averages
-                        for key in stage_metrics:
-                            stage_metrics[key] /= interactions_per_stage
-                        
-                        # Update stage
-                        old_stage = current_stage
-                        child.curriculum.update_stage(stage_metrics)
-                        
-                        # Check if stage changed
-                        if child.curriculum.current_stage != old_stage:
-                            print(f"\nProgressing from {old_stage.name} to {child.curriculum.current_stage.name}")
-                            total_stages_completed += 1
-                            # Reset metrics for next stage
-                            for key in stage_metrics:
-                                stage_metrics[key] = 0.0
-                            break
-                    
-                    # Print progress
-                    print(f"\rStage: {current_stage.name} | Progress: {current_stage_interactions}/{interactions_per_stage} | Completed Stages: {total_stages_completed}/{max_stages}", end='')
-                    
-                    # Memory management
-                    if current_stage_interactions % 10 == 0:
-                        child.memory.replay_consolidation()
-                        
-                except Exception as e:
-                    print(f"\nError in interaction: {e}")
-                    time.sleep(1)
-                    continue
-            
-            # Force stage progression if stuck
-            if child.curriculum.current_stage == current_stage:
-                print(f"\nForcing progression from {current_stage.name}")
-                next_stage_value = min(current_stage.value + 1, max_stages)
-                child.curriculum.current_stage = DevelopmentalStage(next_stage_value)
-                total_stages_completed += 1
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--autonomous', action='store_true', help='Run in autonomous learning mode')
+    args = parser.parse_args()
     
-    except KeyboardInterrupt:
-        print(f"\nMother: Goodnight my dear child. (Age: {child.age()} months)")
-    finally:
-        print("\nSaving final state...")
-        torch.save(child.brain.state_dict(), f"digital_child_{child.age()}mo.pth")
-        print("Save complete.")
+    if args.autonomous:
+        child.autonomous_mode()
+    else:
+        try:
+            while total_stages_completed < max_stages:
+                current_stage = child.curriculum.current_stage
+                current_stage_interactions = 0
+                
+                # Complete required interactions for current stage
+                while current_stage_interactions < interactions_per_stage:
+                    try:
+                        # Generate and process response
+                        stimulus = child.mother.generate_stimulus(current_stage, child.express_feeling())
+                        child.update_emotions(stimulus['emotional_vector'])
+                        perception = child.perceive(stimulus)
+                        response = child.respond(perception)
+                        
+                        # Get feedback
+                        feedback = chat_completion(
+                            system_prompt=f"Evaluate this response from your {current_stage.name.lower()} digital child: {response}",
+                            user_prompt=f"Child expressed {child.express_feeling()}. Provide nurturing feedback:",
+                            structured_output=True
+                        )
+                        
+                        # Update metrics
+                        stage_metrics['success_rate'] += feedback.get('reward_score', 0.5)
+                        stage_metrics['abstraction'] += feedback.get('complexity_rating', 0.5)
+                        stage_metrics['self_awareness'] += feedback.get('self_critique_score', 0.5)
+                        
+                        # Learning step
+                        loss = child.learn({
+                            'input': perception,
+                            'internal_state': response,
+                            'reward': feedback.get('reward_score', 0.5)
+                        })
+                        
+                        # Update counters
+                        current_stage_interactions += 1
+                        
+                        # Average metrics for stage progression
+                        if current_stage_interactions >= interactions_per_stage:
+                            # Calculate averages
+                            for key in stage_metrics:
+                                stage_metrics[key] /= interactions_per_stage
+                            
+                            # Update stage
+                            old_stage = current_stage
+                            child.curriculum.update_stage(stage_metrics)
+                            
+                            # Check if stage changed
+                            if child.curriculum.current_stage != old_stage:
+                                print(f"\nProgressing from {old_stage.name} to {child.curriculum.current_stage.name}")
+                                total_stages_completed += 1
+                                # Reset metrics for next stage
+                                for key in stage_metrics:
+                                    stage_metrics[key] = 0.0
+                                break
+                        
+                        # Print progress
+                        print(f"\rStage: {current_stage.name} | Progress: {current_stage_interactions}/{interactions_per_stage} | Completed Stages: {total_stages_completed}/{max_stages}", end='')
+                        
+                        # Memory management
+                        if current_stage_interactions % 10 == 0:
+                            child.memory.replay_consolidation()
+                            
+                    except Exception as e:
+                        print(f"\nError in interaction: {e}")
+                        time.sleep(1)
+                        continue
+                
+                # Force stage progression if stuck
+                if child.curriculum.current_stage == current_stage:
+                    print(f"\nForcing progression from {current_stage.name}")
+                    next_stage_value = min(current_stage.value + 1, max_stages)
+                    child.curriculum.current_stage = DevelopmentalStage(next_stage_value)
+                    total_stages_completed += 1
+        
+        except KeyboardInterrupt:
+            print(f"\nMother: Goodnight my dear child. (Age: {child.age()} months)")
+        finally:
+            print("\nSaving final state...")
+            torch.save(child.brain.state_dict(), f"digital_child_{child.age()}mo.pth")
+            print("Save complete.")
 
 if __name__ == "__main__":
     main()
