@@ -111,6 +111,47 @@ class DevelopmentalSystem:
             }
         )
     
+    def get_stage_requirements(self) -> Dict[str, Any]:
+        """Get detailed requirements and behaviors for the current stage"""
+        stage_def = STAGE_DEFINITIONS.get(self.current_stage)
+        if not stage_def:
+            raise ValueError(f"No definition found for stage {self.current_stage}")
+            
+        # Get stage-specific behaviors based on the stage
+        behaviors = {
+            DevelopmentalStage.NEWBORN: [
+                'Crying to express needs',
+                'Basic reflexes',
+                'Sleep-wake cycles',
+                'Feeding responses'
+            ],
+            DevelopmentalStage.EARLY_INFANCY: [
+                'Social smiling',
+                'Cooing and babbling',
+                'Following objects with eyes',
+                'Responding to sounds'
+            ],
+            DevelopmentalStage.LATE_INFANCY: [
+                'Reaching for objects',
+                'Making distinct sounds',
+                'Showing emotions',
+                'Recognizing familiar faces'
+            ]
+        }.get(self.current_stage, ['Basic development'])
+        
+        return {
+            'stage': self.current_stage,
+            'age_range': stage_def['age_range'],
+            'required_skills': stage_def['required_skills'],
+            'learning_focus': stage_def.get('learning_focus', []),
+            'emotional_range': stage_def.get('emotional_range', (0.0, 1.0)),
+            'behaviors': behaviors,
+            'current_milestones': stage_def.get('current_milestones', []),
+            'upcoming_milestones': stage_def.get('upcoming_milestones', []),
+            'complexity_range': stage_def.get('complexity_range', (0.1, 0.5)),
+            'trust_emphasis': stage_def.get('trust_emphasis', 0.5)
+        }
+    
     def update_stage(self, metrics: Dict[str, float], interactions_per_stage: int = 100):
         """Update stage metrics and check for progression"""
         # Update internal metrics
