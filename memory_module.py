@@ -38,6 +38,7 @@ class DifferentiableMemory(nn.Module):
         self.working_memory = deque(maxlen=10)
         self.long_term_clusters: List[MemoryCluster] = []
         self.max_clusters = long_term_capacity // 100
+        self.experiences = []  # Add experiences list
         
         # Updated encoder: maps 768 -> 128
         self.encoder = nn.Sequential(

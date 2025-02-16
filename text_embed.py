@@ -2,7 +2,7 @@
 
 import json
 from typing import List, Dict, Any
-from config import DEFAULT_EMBEDDING
+from config import DEFAULT_EMBEDDING, config
 from local_embeddings import SimpleEmbeddingService, embedding_service  # Update import
 
 def get_embeddings(text: str) -> List[Dict[str, Any]]:
@@ -15,8 +15,8 @@ def get_embeddings(text: str) -> List[Dict[str, Any]]:
         embedding = embedding_service.get_embedding(text)
         
         # Validate embedding dimension
-        if len(embedding) != config.EMBEDDING_DIM:
-            print(f"Warning: Invalid embedding dimension: {len(embedding)}, expected {config.EMBEDDING_DIM}")
+        if len(embedding) != config.embedding_dim:
+            print(f"Warning: Invalid embedding dimension: {len(embedding)}, expected {config.embedding_dim}")
             return [{'embedding': DEFAULT_EMBEDDING}]
             
         return [{'embedding': embedding}]

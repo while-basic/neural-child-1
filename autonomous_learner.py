@@ -1,5 +1,6 @@
 import torch
 import random
+import numpy as np
 from config import config
 
 class AutonomousLearner:
@@ -21,15 +22,21 @@ class AutonomousLearner:
         topic = random.choice(self.learning_topics)
         return f"I want to explore and learn about {topic} at complexity level {complexity:.2f}"
 
-    def evaluate_learning(self, response: dict) -> float:
+    def evaluate_learning(self, response: torch.Tensor) -> float:
         """Evaluate learning progress based on response quality"""
-        metrics = {
-            'coherence': response.get('coherence', 0.5),
-            'complexity': response.get('complexity_rating', 0.5),
-            'novelty': response.get('novelty', 0.5),
-            'emotional_engagement': response.get('emotional_intensity', 0.5)
-        }
-        return sum(metrics.values()) / len(metrics)
+        try:
+            # Convert tensor response to evaluation metrics
+            response_vector = response.detach().cpu().numpy()
+            metrics = {
+                'coherence': float(np.mean(response_vector)),  # Average activation
+                'complexity': float(np.std(response_vector)),  # Response variation
+                'novelty': float(np.max(response_vector)),     # Peak activation
+                'emotional_engagement': float(np.abs(np.mean(response_vector)))  # Emotional intensity
+            }
+            return sum(metrics.values()) / len(metrics)
+        except Exception as e:
+            print(f"Error in evaluate_learning: {e}")
+            return 0.5  # Return default score on error
 
     def adjust_learning_strategy(self, performance: float):
         """Adjust learning parameters based on performance"""
