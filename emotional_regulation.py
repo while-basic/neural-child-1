@@ -3,6 +3,8 @@
 import torch
 import torch.nn as nn
 from collections import deque
+from typing import Dict, Any, Optional
+import numpy as np
 
 class EmotionalState:
     def __init__(self, device='cuda'):
@@ -74,84 +76,138 @@ class EmotionalState:
             self.primary_emotions[emotion].data = tensor[i]
 
 class EmotionalRegulation(nn.Module):
-    def __init__(self, emotion_dim=4, hidden_dim=64, device='cpu'):
+    def __init__(self, 
+                 emotion_dim: int = 4,
+                 hidden_dim: int = 32,
+                 device: Optional[torch.device] = None):
         super().__init__()
-        self.device = device
-        self.baseline = torch.zeros(emotion_dim, device=device)
-        self.emotional_memory = torch.zeros((100, emotion_dim), device=device)
-        self.memory_pointer = 0
+        self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.emotion_dim = emotion_dim
+        self.hidden_dim = hidden_dim
         
+        # Emotion processing network
+        self.emotion_processor = nn.Sequential(
+            nn.Linear(emotion_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, emotion_dim),
+            nn.Sigmoid()
+        )
+        
+        # Context integration network
+        self.context_network = nn.Sequential(
+            nn.Linear(hidden_dim + emotion_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, emotion_dim),
+            nn.Sigmoid()
+        )
+        
+        # Regulation network
         self.regulation_network = nn.Sequential(
             nn.Linear(emotion_dim * 2, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, emotion_dim)
-        ).to(device)
-        
-        self.context_processor = nn.LSTM(
-            input_size=emotion_dim,
-            hidden_size=emotion_dim * 2,
-            num_layers=2,
-            batch_first=True,
-            dropout=0.1
-        ).to(device)
-        
-        self.stability_net = nn.Sequential(
-            nn.Linear(emotion_dim * 2 + hidden_dim, 256),
-            nn.LayerNorm(256),
-            nn.GELU(),
-            nn.Linear(256, emotion_dim)
-        ).to(device)
-        
-        self.memory_gate = nn.Sequential(
-            nn.Linear(hidden_dim + emotion_dim, 64),
-            nn.GELU(),
-            nn.Linear(64, emotion_dim),
+            nn.Linear(hidden_dim, emotion_dim),
             nn.Sigmoid()
-        ).to(device)
+        )
         
-        self.emotional_history = deque(maxlen=5)
+        # Adaptive parameters
+        self.regulation_strength = nn.Parameter(torch.tensor(0.5))
+        self.emotional_memory = nn.Parameter(torch.zeros(emotion_dim))
+        self.baseline_emotions = nn.Parameter(torch.ones(emotion_dim) * 0.5)
+        
+        # Move to device
         self.to(self.device)
         
-    def update_baseline(self):
-        if self.emotional_history:
-            recent_emotions = torch.stack(list(self.emotional_history))
-            alpha = 0.1
-            self.baseline = alpha * recent_emotions.mean(dim=0) + (1 - alpha) * self.baseline
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Process and regulate emotional state"""
+        # Ensure input is on correct device
+        x = x.to(self.device)
+        
+        # Extract emotional features
+        emotional_state = self.emotion_processor(x)
+        
+        # Integrate context
+        context_features = torch.mean(x.view(-1, self.hidden_dim), dim=0)
+        context = self.context_network(
+            torch.cat([context_features, emotional_state.squeeze(0)], dim=0)
+        )
+        
+        # Update emotional memory
+        self.emotional_memory.data = (
+            0.9 * self.emotional_memory.data +
+            0.1 * emotional_state.squeeze(0)
+        )
+        
+        # Regulate emotions
+        target_state = self._compute_target_state(emotional_state, context)
+        regulated_state = self.regulation_network(
+            torch.cat([emotional_state, target_state], dim=-1)
+        )
+        
+        # Apply regulation strength
+        final_state = (
+            self.regulation_strength * regulated_state +
+            (1 - self.regulation_strength) * emotional_state
+        )
+        
+        return final_state
+    
+    def _compute_target_state(self, 
+                            current_state: torch.Tensor,
+                            context: torch.Tensor) -> torch.Tensor:
+        """Compute target emotional state based on context and baseline"""
+        # Weighted combination of baseline and context
+        target = (
+            0.7 * self.baseline_emotions +
+            0.3 * context
+        )
+        
+        # Ensure target state is achievable
+        max_change = 0.2  # Maximum allowed change per step
+        delta = target - current_state
+        clamped_delta = torch.clamp(delta, -max_change, max_change)
+        target_state = current_state + clamped_delta
+        
+        return target_state
+    
+    def update_baseline(self, emotion_sequence: torch.Tensor):
+        """Update baseline emotions based on observed sequence"""
+        with torch.no_grad():
+            # Calculate moving average
+            sequence_mean = torch.mean(emotion_sequence, dim=0)
             
-    def detect_trauma(self, emotional_state):
-        intensity = torch.norm(emotional_state - self.baseline)
-        duration = len([e for e in self.emotional_history if torch.norm(e - self.baseline) > 0.7])
+            # Update baseline with momentum
+            self.baseline_emotions.data = (
+                0.95 * self.baseline_emotions.data +
+                0.05 * sequence_mean
+            )
+    
+    def adjust_regulation_strength(self, 
+                                 performance: float,
+                                 target_performance: float):
+        """Adjust regulation strength based on performance"""
+        with torch.no_grad():
+            # Calculate performance gap
+            performance_gap = target_performance - performance
+            
+            # Adjust regulation strength
+            if performance_gap > 0.2:  # Underperforming
+                self.regulation_strength.data *= 1.1  # Increase regulation
+            elif performance_gap < -0.2:  # Overperforming
+                self.regulation_strength.data *= 0.9  # Decrease regulation
+            
+            # Clamp to reasonable range
+            self.regulation_strength.data = torch.clamp(
+                self.regulation_strength.data,
+                0.1,  # Minimum regulation
+                0.9   # Maximum regulation
+            )
+    
+    def get_emotional_state(self) -> Dict[str, float]:
+        """Get current emotional state metrics"""
         return {
-            'is_traumatic': intensity > 1.0,
-            'duration': duration,
-            'intensity': intensity.item()
-        }
-        
-    def compute_regulation_strength(self, emotional_state):
-        deviation = torch.abs(emotional_state - self.baseline)
-        return torch.sigmoid(deviation * 1.0)
-        
-    def regulate(self, emotional_state, stimulus, memory_context=None):
-        if len(self.emotional_history) >= 2:
-            context_tensor = torch.stack(list(self.emotional_history))
-            context_output, _ = self.context_processor(context_tensor.unsqueeze(0))
-            context_embedding = context_output[0, -1]
-        else:
-            context_embedding = torch.zeros(self.emotion_dim * 2, device=self.device)
-        if memory_context is not None:
-            memory_influence = self.memory_gate(torch.cat([memory_context, emotional_state], dim=-1))
-            context_embedding = context_embedding * memory_influence
-        else:
-            memory_influence = None
-        combined_input = torch.cat([
-            context_embedding,
-            memory_context if memory_context is not None else torch.zeros(64, device=self.device)
-        ], dim=-1)
-        regulated_response = self.stability_net(combined_input)
-        new_state = torch.clamp(regulated_response, 0, 1)
-        self.emotional_history.append(emotional_state.detach())
-        return {
-            'emotional_state': new_state,
-            'context_influence': context_embedding,
-            'memory_influence': memory_influence
+            'current_memory': self.emotional_memory.tolist(),
+            'baseline': self.baseline_emotions.tolist(),
+            'regulation_strength': self.regulation_strength.item()
         }

@@ -4,7 +4,7 @@ import time
 from datetime import datetime
 from llm_module import chat_completion
 from child_model import DynamicNeuralChild
-from curriculum_manager import DevelopmentalStage, DevelopmentalSystem
+from developmental_stages import DevelopmentalStage, DevelopmentalSystem
 from memory_module import DifferentiableMemory
 from moral_network import MoralPolicyNetwork
 from metacognition import MetacognitionSystem

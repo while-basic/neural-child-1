@@ -1,83 +1,152 @@
 import torch
-import random
+import torch.nn as nn
+from typing import Dict, Any
 import numpy as np
 from config import config
 
 class AutonomousLearner:
     def __init__(self, child_model):
-        self.model = child_model
-        self.exploration_rate = 0.3
-        self.curiosity_threshold = 0.7
-        self.learning_topics = [
-            "emotions", "objects", "actions", "concepts",
-            "relationships", "communication", "problem-solving"
-        ]
-        self.learning_history = []
-
-    def generate_self_prompt(self) -> str:
-        """Generate learning prompts based on curiosity and current development stage"""
-        stage = self.model.curriculum.current_stage
-        complexity = min(1.0, stage.value / 17.0)  # Normalize stage value
+        self.child = child_model
+        self.learning_parameters = {
+            'learning_rate': config.learning_rate,
+            'exploration_rate': 0.3,
+            'curriculum_difficulty': 0.1
+        }
+        self.performance_history = []
+        self.exploration_decay = 0.995
+        self.min_exploration = 0.05
         
-        topic = random.choice(self.learning_topics)
-        return f"I want to explore and learn about {topic} at complexity level {complexity:.2f}"
-
-    def evaluate_learning(self, response: torch.Tensor) -> float:
-        """Evaluate learning progress based on response quality"""
-        try:
-            # Convert tensor response to evaluation metrics
-            response_vector = response.detach().cpu().numpy()
-            metrics = {
-                'coherence': float(np.mean(response_vector)),  # Average activation
-                'complexity': float(np.std(response_vector)),  # Response variation
-                'novelty': float(np.max(response_vector)),     # Peak activation
-                'emotional_engagement': float(np.abs(np.mean(response_vector)))  # Emotional intensity
-            }
-            return sum(metrics.values()) / len(metrics)
-        except Exception as e:
-            print(f"Error in evaluate_learning: {e}")
-            return 0.5  # Return default score on error
-
-    def adjust_learning_strategy(self, performance: float):
-        """Adjust learning parameters based on performance"""
-        if performance < 0.3:
-            self.exploration_rate = max(0.1, self.exploration_rate * 0.9)
-        elif performance > 0.7:
-            self.exploration_rate = min(0.5, self.exploration_rate * 1.1)
-
-    def reset_learning_parameters(self):
-        """Reset learning parameters to default values to recover from stuck states"""
-        self.exploration_rate = 0.3
-        self.curiosity_threshold = 0.7
-        # Clear recent learning history to avoid being stuck in a bad pattern
-        if len(self.learning_history) > 0:
-            self.learning_history = self.learning_history[:-10]  # Keep all but last 10 entries
-        print("Reset learning parameters to default values")
-
-    def learn_independently(self) -> dict:
+    def learn_independently(self) -> Dict[str, float]:
         """Execute one cycle of autonomous learning"""
-        prompt = self.generate_self_prompt()
-        
-        # Generate self-directed response
-        with torch.no_grad():
-            perception = self.model.perceive({'text': prompt})
-            response = self.model.respond(perception)
+        try:
+            # Generate self-directed learning task
+            task = self._generate_task()
             
-            # Evaluate learning
-            performance = self.evaluate_learning(response)
+            # Attempt the task
+            with torch.no_grad():
+                response = self.child.brain(task['input'])
             
-            # Update learning strategy
-            self.adjust_learning_strategy(performance)
+            # Self-evaluate performance
+            performance = self._evaluate_performance(response, task['target'])
             
-            # Record learning experience
-            self.learning_history.append({
-                'prompt': prompt,
+            # Update learning parameters based on performance
+            self._adapt_parameters(performance)
+            
+            # Record performance
+            self.performance_history.append(performance)
+            
+            # Decay exploration rate
+            self.learning_parameters['exploration_rate'] = max(
+                self.min_exploration,
+                self.learning_parameters['exploration_rate'] * self.exploration_decay
+            )
+            
+            return {
                 'performance': performance,
-                'timestamp': self.model.age()
-            })
+                'learning_rate': self.learning_parameters['learning_rate'],
+                'exploration_rate': self.learning_parameters['exploration_rate'],
+                'curriculum_difficulty': self.learning_parameters['curriculum_difficulty']
+            }
+            
+        except Exception as e:
+            print(f"Error in autonomous learning: {str(e)}")
+            return {
+                'performance': 0.0,
+                'learning_rate': self.learning_parameters['learning_rate'],
+                'exploration_rate': self.learning_parameters['exploration_rate'],
+                'curriculum_difficulty': self.learning_parameters['curriculum_difficulty']
+            }
+    
+    def _generate_task(self) -> Dict[str, torch.Tensor]:
+        """Generate a learning task based on current capabilities"""
+        # Get current stage characteristics
+        stage = self.child.curriculum.current_stage
+        stage_char = self.child.curriculum.get_stage_characteristics()
+        
+        # Generate task difficulty based on current performance
+        if self.performance_history:
+            avg_performance = np.mean(self.performance_history[-10:])
+            difficulty = self.learning_parameters['curriculum_difficulty']
+            
+            # Adjust difficulty based on performance
+            if avg_performance > 0.8:
+                difficulty = min(1.0, difficulty + 0.1)
+            elif avg_performance < 0.4:
+                difficulty = max(0.1, difficulty - 0.1)
+                
+            self.learning_parameters['curriculum_difficulty'] = difficulty
+        
+        # Generate input tensor
+        input_dim = config.embedding_dim
+        noise_scale = self.learning_parameters['exploration_rate']
+        
+        base_input = torch.randn(1, input_dim, device=self.child.device)
+        noise = torch.randn_like(base_input) * noise_scale
+        task_input = base_input + noise
+        
+        # Generate target based on stage requirements
+        target = self._generate_target(stage_char)
         
         return {
-            'prompt': prompt,
-            'performance': performance,
-            'exploration_rate': self.exploration_rate
+            'input': task_input,
+            'target': target,
+            'difficulty': self.learning_parameters['curriculum_difficulty']
         }
+    
+    def _generate_target(self, stage_char) -> torch.Tensor:
+        """Generate target tensor based on stage characteristics"""
+        target_dim = config.embedding_dim
+        complexity = np.interp(
+            stage_char.complexity_range[0],
+            [0, 1],
+            [0.1, 0.9]
+        )
+        
+        # Generate structured target
+        target = torch.zeros(1, target_dim, device=self.child.device)
+        num_active = int(target_dim * complexity)
+        active_indices = torch.randperm(target_dim)[:num_active]
+        target[0, active_indices] = torch.randn(num_active)
+        
+        return target
+    
+    def _evaluate_performance(self, 
+                            response: torch.Tensor,
+                            target: torch.Tensor) -> float:
+        """Evaluate the performance of the response against the target"""
+        with torch.no_grad():
+            # Calculate cosine similarity
+            similarity = torch.nn.functional.cosine_similarity(
+                response.flatten(),
+                target.flatten(),
+                dim=0
+            )
+            
+            # Scale to [0, 1] range
+            performance = (similarity + 1) / 2
+            
+            return performance.item()
+    
+    def _adapt_parameters(self, performance: float):
+        """Adapt learning parameters based on performance"""
+        # Adjust learning rate
+        if performance < 0.3:
+            self.learning_parameters['learning_rate'] *= 0.9
+        elif performance > 0.8:
+            self.learning_parameters['learning_rate'] *= 1.1
+            
+        # Clip learning rate
+        self.learning_parameters['learning_rate'] = np.clip(
+            self.learning_parameters['learning_rate'],
+            1e-5,
+            1e-2
+        )
+    
+    def reset_learning_parameters(self):
+        """Reset learning parameters to default values"""
+        self.learning_parameters = {
+            'learning_rate': config.learning_rate,
+            'exploration_rate': 0.3,
+            'curriculum_difficulty': 0.1
+        }
+        self.performance_history = []

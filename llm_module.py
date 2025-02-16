@@ -4,16 +4,18 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import json
-from typing import Optional, Dict, Any
-from schemas import MotherResponse
+from typing import Optional, Dict, Any, List
+from schemas import MotherResponse, EmotionalContext, ActionType
 from config import CHAT_SERVER_URL, DEFAULT_RESPONSE, config, DEVICE
-from utils import parse_llm_response
+from utils import parse_llm_response, ensure_tensor, create_error_response, validate_emotional_vector
 import torch
 from openai import OpenAI
+import time
+from datetime import datetime
 
 # Initialize OpenAI client for LM Studio
 client = OpenAI(
-    base_url="http://localhost:1234/v1",
+    base_url=CHAT_SERVER_URL,
     api_key="not-needed"
 )
 
@@ -39,9 +41,9 @@ def create_retry_session(
 def chat_completion(
     system_prompt: str,
     user_prompt: str,
-    model: str = "mistral",  # Updated to use Mistral model
-    temperature: float = 0.7,
-    max_tokens: int = 1000,
+    model: str = config.DEFAULT_MODEL,
+    temperature: float = config.temperature,
+    max_tokens: int = config.max_response_tokens,
     stream: bool = False,
     structured_output: bool = False
 ) -> Optional[Dict[str, Any]]:
@@ -50,7 +52,6 @@ def chat_completion(
     """
     # Generate JSON schema if structured output requested
     if structured_output:
-        # Add example format to the system prompt
         system_prompt += "\nRespond in valid JSON format like this example:\n"
         system_prompt += """
 {
@@ -61,14 +62,22 @@ def chat_completion(
         "fear": 0.1,
         "surprise": 0.2
     },
+    "action": "COMFORT",
     "reward_score": 0.7,
     "success_metric": 0.6,
     "complexity_rating": 0.3,
     "self_critique_score": 0.5,
-    "cognitive_labels": ["positive_reinforcement", "emotional_support"]
+    "cognitive_labels": ["positive_reinforcement", "emotional_support"],
+    "effectiveness": 0.75,
+    "developmental_focus": {
+        "emotional_regulation": 0.8,
+        "social_skills": 0.6,
+        "cognitive_development": 0.4
+    }
 }"""
 
     try:
+        start_time = time.time()
         completion = client.chat.completions.create(
             model=model,
             messages=[
@@ -76,81 +85,136 @@ def chat_completion(
                 {"role": "user", "content": user_prompt}
             ],
             temperature=temperature,
+            max_tokens=max_tokens,
             stream=stream
         )
         
+        if stream:
+            return completion  # Return the stream directly
+            
         raw_content = completion.choices[0].message.content
+        response_time = time.time() - start_time
         
         if not raw_content:
-            print("Empty response from LLM server")
-            return DEFAULT_RESPONSE
+            return create_error_response(
+                "empty_response",
+                "Empty response from LLM server"
+            )
         
         if structured_output:
             try:
-                # Try to clean up the response if it contains extra text
+                # Clean up the response
                 raw_content = raw_content.strip()
-                # Find the first { and last }
                 start = raw_content.find('{')
                 end = raw_content.rfind('}') + 1
                 if start >= 0 and end > start:
                     raw_content = raw_content[start:end]
                 
-                # Parse the JSON and validate against schema
+                # Parse and validate the response
                 parsed_json = json.loads(raw_content)
-                return MotherResponse(**parsed_json).dict()
+                response = MotherResponse(**parsed_json)
+                
+                # Add metadata
+                result = response.dict()
+                result['metadata'] = {
+                    'response_time': response_time,
+                    'timestamp': datetime.now().isoformat(),
+                    'model': model
+                }
+                return result
+                
             except (json.JSONDecodeError, ValueError) as e:
-                print(f"Failed to parse structured LLM response: {e}")
-                print(f"Raw content was: {raw_content}")
-                return DEFAULT_RESPONSE
+                return create_error_response(
+                    "parse_error",
+                    f"Failed to parse structured response: {str(e)}"
+                )
         
-        # For non-structured output, just return the parsed response
-        return {'text': raw_content}
+        # For non-structured output, return the parsed response
+        return {
+            'text': raw_content,
+            'metadata': {
+                'response_time': response_time,
+                'timestamp': datetime.now().isoformat(),
+                'model': model
+            }
+        }
 
     except Exception as e:
-        print(f"Error in chat completion: {str(e)}")
-        return DEFAULT_RESPONSE
-
-def _get_default_response(structured: bool = False) -> Dict[str, Any]:
-    """Get default response in case of errors."""
-    if structured:
-        return {
-            'response_text': 'I need a moment to think.',
-            'emotional_context': {
-                'happiness': 0.5,
-                'sadness': 0.5,
-                'anger': 0.5,
-                'fear': 0.5
-            },
-            'reward_score': 0.5,
-            'complexity_rating': 0.5,
-            'self_critique_score': 0.5
-        }
-    return {'text': 'I need a moment to think.'}
+        return create_error_response(
+            "llm_error",
+            f"Error in chat completion: {str(e)}"
+        )
 
 class LLMModule:
     def __init__(self):
         self.device = DEVICE
-        # Initialize other necessary components
+        self.session = create_retry_session()
+        self.response_cache = {}
+        self.error_count = 0
+        self.last_error_time = None
     
-    def process_response(self, response_text):
+    def process_response(self, response_text: str) -> Dict[str, Any]:
+        """Process LLM response with enhanced error handling and caching"""
         try:
-            # Add better error handling for response parsing
+            # Check cache first
+            cache_key = hash(response_text)
+            if cache_key in self.response_cache:
+                return self.response_cache[cache_key]
+            
+            # Basic validation
             if not response_text or not isinstance(response_text, str):
-                return {
-                    'text': 'I need a moment to think.',
-                    'emotional_vector': torch.tensor([0.5, 0.5, 0.5, 0.5], device=self.device)
-                }
+                self._log_error("invalid_input", "Invalid response text")
+                return DEFAULT_RESPONSE
             
-            # Process the response
-            # Add your processing logic here
+            # Parse the response
+            parsed = parse_llm_response(response_text)
             
-            return {
-                'text': response_text,
-                'emotional_vector': torch.tensor([0.5, 0.5, 0.5, 0.5], device=self.device)
+            # Extract emotional vector
+            emotional_context = parsed.get('emotional_context', {})
+            emotional_vector = [
+                emotional_context.get('joy', 0.5),
+                emotional_context.get('trust', 0.5),
+                emotional_context.get('fear', 0.1),
+                emotional_context.get('surprise', 0.3)
+            ]
+            
+            # Validate emotional vector
+            if not validate_emotional_vector(emotional_vector):
+                self._log_error("invalid_emotion", "Invalid emotional vector")
+                emotional_vector = [0.5, 0.5, 0.1, 0.3]
+            
+            # Create the processed response
+            processed_response = {
+                'text': parsed.get('content', DEFAULT_RESPONSE['text']),
+                'emotional_vector': ensure_tensor(emotional_vector, self.device),
+                'action': parsed.get('action'),
+                'effectiveness': float(parsed.get('effectiveness', 0.5)),
+                'complexity': float(parsed.get('complexity_rating', 0.3))
             }
+            
+            # Cache the result
+            self.response_cache[cache_key] = processed_response
+            
+            return processed_response
+            
         except Exception as e:
-            print(f"Error processing LLM response: {str(e)}")
+            self._log_error("processing_error", str(e))
             return {
-                'text': 'I need a moment to think.',
-                'emotional_vector': torch.tensor([0.5, 0.5, 0.5, 0.5], device=self.device)
+                'text': DEFAULT_RESPONSE['text'],
+                'emotional_vector': ensure_tensor([0.5, 0.5, 0.5, 0.5], self.device),
+                'action': None,
+                'effectiveness': 0.5,
+                'complexity': 0.3
             }
+    
+    def _log_error(self, error_type: str, details: str):
+        """Log error and update error tracking"""
+        self.error_count += 1
+        self.last_error_time = datetime.now()
+        print(f"LLM Error ({error_type}): {details}")
+        
+        # Reset error count periodically
+        if self.error_count > 10:
+            time_since_first_error = (datetime.now() - self.last_error_time).total_seconds()
+            if time_since_first_error > 300:  # Reset after 5 minutes
+                self.error_count = 0

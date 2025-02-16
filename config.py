@@ -1,74 +1,119 @@
 import torch
 from dataclasses import dataclass
-from typing import List, Dict
-from developmental_stages import DevelopmentalStage
+from typing import List, Dict, Any
+from developmental_stages import DevelopmentalStage  # Only import the enum
 
-@dataclass
+# Device configuration
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# LLM configuration
+CHAT_SERVER_URL = "http://localhost:1234/v1"
+DEFAULT_MODEL = "mistral"
+
+# Model dimensions
+embedding_dim = 384  # Standard dimension for text embeddings
+hidden_dim = 256
+emotion_dim = 4
+
+# Training parameters
+learning_rate = 3e-4
+weight_decay = 0.01
+gradient_clip_norm = 1.0
+warmup_steps = 1000
+checkpoint_interval = 100
+save_interval = 300  # Save every 5 minutes
+memory_consolidation_interval = 50
+moving_average_window = 50  # Added moving average window size
+
+# Interaction parameters
+interactions_per_stage = 100
+max_response_tokens = 1000
+temperature = 0.7
+
+# Default response when LLM fails
+DEFAULT_RESPONSE: Dict[str, Any] = {
+    'text': 'I need a moment to think.',
+    'emotional_context': {
+        'joy': 0.5,
+        'trust': 0.5,
+        'fear': 0.1,
+        'surprise': 0.3
+    },
+    'reward_score': 0.5,
+    'success_metric': 0.5,
+    'complexity_rating': 0.3,
+    'self_critique_score': 0.5,
+    'cognitive_labels': ['basic_interaction'],
+    'effectiveness': 0.5
+}
+
+# Stage-specific configurations
+STAGE_DEFINITIONS = {
+    'NEWBORN': {
+        'age_range': (0, 3),  # months
+        'complexity_range': (0.1, 0.2),
+        'emotional_range': (0.6, 0.8),
+        'trust_emphasis': 0.8,
+        'current_milestones': [
+            'Basic emotional responses',
+            'Simple reflexes',
+            'Recognition of primary caregiver'
+        ],
+        'upcoming_milestones': [
+            'Social smiling',
+            'Head control',
+            'Cooing sounds'
+        ]
+    },
+    'EARLY_INFANCY': {
+        'age_range': (3, 6),
+        'complexity_range': (0.2, 0.3),
+        'emotional_range': (0.5, 0.7),
+        'trust_emphasis': 0.7,
+        'current_milestones': [
+            'Social smiling',
+            'Laughing',
+            'Object tracking'
+        ],
+        'upcoming_milestones': [
+            'Sitting without support',
+            'Object manipulation',
+            'Babbling'
+        ]
+    }
+    # Add more stages as needed
+}
+
+# Create a config object that can be imported
 class Config:
     def __init__(self):
-        # Model dimensions
-        self.embedding_dim = 768  # Standard embedding dimension for most transformer models
-        self.hidden_dim = 512     # Hidden dimension for neural network layers
-        self.max_sequence_length = 512
-        self.batch_size = 32
-        self.learning_rate = 1e-4
-        
-        # Training settings
-        self.max_iterations = 1000
-        self.save_interval = 50
-        self.checkpoint_dir = "checkpoints"
-        self.log_dir = "logs"
-        
-        # Development settings
-        self.interactions_per_stage = 10
-        self.min_stage_success_rate = 0.4
-        self.stage_progression_threshold = 0.5
-        
-        # Memory settings
-        self.memory_capacity = 50000
-        self.replay_batch_size = 64
-        self.memory_consolidation_interval = 200
-        
-        # Device settings
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        for key, value in globals().items():
+            if not key.startswith('_'):
+                setattr(self, key, value)
 
-# Create a global config instance
 config = Config()
 
 # Server configurations
 EMBEDDING_SERVER_URL = "http://localhost:1234"  # Change as needed
-CHAT_SERVER_URL = "http://localhost:1234"       # Change as needed
 
 # Model Configuration
 LEARNING_RATE = 1e-4
 
 # Training Configuration
 MAX_ITERATIONS = 1000
-SAVE_INTERVAL = 50
 CHECKPOINT_DIR = "checkpoints"
 LOG_DIR = "logs"
 
 # Development Settings
-INTERACTIONS_PER_STAGE = 10
 MIN_STAGE_SUCCESS_RATE = 0.4
 STAGE_PROGRESSION_THRESHOLD = 0.5
 
 # Memory Configuration
 MEMORY_CAPACITY = 50000
 REPLAY_BATCH_SIZE = 64
-MEMORY_CONSOLIDATION_INTERVAL = 200
-
-# Default Response
-DEFAULT_RESPONSE = {
-    'text': 'I need a moment to think.',
-    'emotional_vector': [0.5, 0.5, 0.5, 0.5]
-}
 
 # Default Embedding (zeros vector of embedding_dim size)
-DEFAULT_EMBEDDING = [0.0] * config.embedding_dim
-
-# Device Configuration
-DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+DEFAULT_EMBEDDING = [0.0] * embedding_dim
 
 @dataclass
 class StageRequirements:
@@ -78,111 +123,6 @@ class StageRequirements:
     allowed_actions: List[str]
     upcoming_milestones: List[str]
     current_milestones: List[str]
-
-# Stage definitions mapping
-STAGE_DEFINITIONS = {
-    DevelopmentalStage.NEWBORN: StageRequirements(
-        required_skills=['basic reflexes', 'crying'],
-        learning_focus=['sensory processing', 'basic motor skills'],
-        emotional_range=['happiness', 'sadness'],
-        allowed_actions=['soothe', 'feed', 'hold'],
-        upcoming_milestones=[
-            'Recognize mother\'s voice',
-            'Follow moving objects with eyes',
-            'Respond to loud sounds',
-            'Make cooing sounds'
-        ],
-        current_milestones=[
-            'Basic reflexes',
-            'Can cry to express needs'
-        ]
-    ),
-    DevelopmentalStage.EARLY_INFANCY: StageRequirements(
-        required_skills=['object permanence', 'basic gestures'],
-        learning_focus=['motor development', 'social bonding'],
-        emotional_range=['happiness', 'sadness', 'interest'],
-        allowed_actions=['play', 'comfort', 'teach'],
-        upcoming_milestones=[
-            'Smile at familiar faces',
-            'Reach for objects',
-            'Hold head steady',
-            'Make babbling sounds'
-        ],
-        current_milestones=[
-            'Recognize mother\'s voice',
-            'Track moving objects',
-            'Respond to sounds'
-        ]
-    ),
-    DevelopmentalStage.LATE_INFANCY: StageRequirements(
-        required_skills=['crawling', 'babbling'],
-        learning_focus=['motor skills', 'vocal development'],
-        emotional_range=['happiness', 'sadness', 'anger'],
-        allowed_actions=['encourage', 'guide', 'protect'],
-        upcoming_milestones=[
-            'First words',
-            'Pull to stand',
-            'Wave bye-bye',
-            'Play simple games'
-        ],
-        current_milestones=[
-            'Babbling with intent',
-            'Crawling',
-            'Object permanence'
-        ]
-    ),
-    DevelopmentalStage.EARLY_TODDLER: StageRequirements(
-        required_skills=['walking', 'basic words'],
-        learning_focus=['language', 'motor coordination'],
-        emotional_range=['happiness', 'sadness', 'anger', 'fear'],
-        allowed_actions=['teach', 'guide', 'encourage'],
-        upcoming_milestones=[
-            'Two-word phrases',
-            'Run steadily',
-            'Follow simple commands',
-            'Use spoon/fork'
-        ],
-        current_milestones=[
-            'Walking independently',
-            'Several clear words',
-            'Point to objects'
-        ]
-    ),
-    DevelopmentalStage.LATE_TODDLER: StageRequirements(
-        required_skills=['sentences', 'running'],
-        learning_focus=['communication', 'independence'],
-        emotional_range=['happiness', 'sadness', 'anger', 'fear', 'excitement'],
-        allowed_actions=['teach', 'guide', 'discipline'],
-        upcoming_milestones=[
-            'Complete sentences',
-            'Toilet training',
-            'Share toys',
-            'Draw shapes'
-        ],
-        current_milestones=[
-            'Two-word combinations',
-            'Running and climbing',
-            'Basic self-help skills'
-        ]
-    ),
-    DevelopmentalStage.EARLY_PRESCHOOL: StageRequirements(
-        required_skills=['conversation', 'imagination'],
-        learning_focus=['social skills', 'creativity'],
-        emotional_range=['happiness', 'sadness', 'anger', 'fear', 'excitement', 'curiosity'],
-        allowed_actions=['teach', 'guide', 'encourage', 'explain'],
-        upcoming_milestones=[
-            'Complex sentences',
-            'Imaginative play',
-            'Count to 10',
-            'Name colors'
-        ],
-        current_milestones=[
-            'Basic conversations',
-            'Follow two-step instructions',
-            'Take turns in games'
-        ]
-    )
-}
 
 # Add stage definitions with proper enum handling
 for stage in DevelopmentalStage:

@@ -6,6 +6,8 @@ import time
 import numpy as np
 from collections import deque, defaultdict
 from pathlib import Path
+from typing import Dict, Any, Optional
+from config import config
 
 class MovingAverageMonitor:
     def __init__(self, window_size: int = 50):
@@ -201,37 +203,44 @@ class EarlyStopping:
         self.loss_history.clear()
 
 class DevelopmentalTrainer:
-    def __init__(self, child_model: nn.Module, memory: nn.Module, emotional_regulation: nn.Module,
-                 curriculum_manager, mother_llm, metacognition_system, config: dict):
-        self.child = child_model
+    def __init__(self,
+                 child_model: nn.Module,
+                 memory: nn.Module,
+                 emotional_regulation: nn.Module,
+                 curriculum_manager: Any,
+                 mother_llm: Any,
+                 metacognition_system: nn.Module,
+                 config: Dict[str, Any]):
+        self.child_model = child_model
         self.memory = memory
         self.emotional_regulation = emotional_regulation
         self.curriculum = curriculum_manager
         self.mother = mother_llm
         self.metacognition = metacognition_system
-        self.device = config.get('device', 'cuda')
-        self.config = {
-            'learning_rate': config.get('learning_rate', 3e-4),
-            'weight_decay': config.get('weight_decay', 0.01),
-            'gradient_clip_norm': config.get('gradient_clip_norm', 1.0),
-            'warmup_steps': config.get('warmup_steps', 1000),
-            'checkpoint_interval': config.get('checkpoint_interval', 100),
-            'moving_average_window': config.get('moving_average_window', 50),
-            'early_stopping_patience': config.get('early_stopping_patience', 5),
-            'loss_spike_threshold': config.get('loss_spike_threshold', 2.0),
-        }
+        
+        # Training configuration
+        self.device = config.get('device', torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+        self.learning_rate = config.get('learning_rate', 3e-4)
+        self.weight_decay = config.get('weight_decay', 0.01)
+        self.gradient_clip_norm = config.get('gradient_clip_norm', 1.0)
+        self.warmup_steps = config.get('warmup_steps', 1000)
+        
+        # Initialize optimizer
         self.optimizer = torch.optim.AdamW(
-            self.child.parameters(),
-            lr=self.config['learning_rate'],
-            weight_decay=self.config['weight_decay']
+            self.child_model.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay
         )
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
-            self.optimizer,
-            T_0=self.config['warmup_steps'],
-            T_mult=2
-        )
-        self.monitoring = MovingAverageMonitor(window_size=self.config['moving_average_window'])
-        self.checkpointing = CheckpointManager(model=self.child, save_dir='checkpoints', max_checkpoints=5)
+        
+        # Training state
+        self.steps = 0
+        self.best_performance = 0.0
+        self.performance_history = []
+        
+        # Initialize monitoring with default window size if not provided
+        window_size = config.get('moving_average_window', 50)
+        self.monitoring = MovingAverageMonitor(window_size=window_size)
+        self.checkpointing = CheckpointManager(model=self.child_model, save_dir='checkpoints', max_checkpoints=5)
         self._initialize_loss_weights()
 
     def _initialize_loss_weights(self):
@@ -254,100 +263,152 @@ class DevelopmentalTrainer:
     def _compute_stage_weights(self, stage_requirements: dict) -> dict:
         return {'moral': 0.3, 'attachment': 0.3, 'emotional': 0.2, 'cognitive': 0.2}
 
-    def training_step(self, stimulus: torch.Tensor, mother_response: dict) -> dict:
-        self.optimizer.zero_grad()
-        stage_requirements = self.curriculum.get_stage_requirements()
+    def training_step(self, input_data: torch.Tensor) -> float:
+        """Execute one training step"""
+        self.child_model.train()
+        self.steps += 1
+        
         try:
-            child_output = self.child(stimulus)
-        except RuntimeError as e:
-            self.monitoring.log_error('forward_pass', str(e))
-            return self._handle_training_error('Forward pass failed')
-        try:
-            memory_context = self.memory.retrieve_memories(stimulus)
-            regulated_emotion = self.emotional_regulation.regulate(
-                emotional_state=self.child.emotional_state,
-                stimulus=stimulus,
-                memory_context=memory_context
+            # Get current stage characteristics
+            stage = self.curriculum.get_stage_characteristics()
+            
+            # Forward pass
+            output = self.child_model(input_data)
+            
+            # Get metacognitive assessment
+            meta_output = self.metacognition(output)
+            
+            # Calculate losses
+            reconstruction_loss = self._compute_reconstruction_loss(output, input_data)
+            emotional_loss = self._compute_emotional_loss(output)
+            complexity_loss = self._compute_complexity_loss(output, stage)
+            
+            # Combine losses with metacognitive weighting
+            total_loss = (
+                reconstruction_loss * meta_output['attention'].item() +
+                emotional_loss * 0.3 +
+                complexity_loss * 0.2
             )
-        except RuntimeError as e:
-            self.monitoring.log_error('emotional_regulation', str(e))
-            return self._handle_training_error('Emotional regulation failed')
-        try:
-            losses = self._compute_losses(child_output, regulated_emotion, mother_response, stage_requirements)
-        except RuntimeError as e:
-            self.monitoring.log_error('loss_computation', str(e))
-            return self._handle_training_error('Loss computation failed')
-        self.update_loss_weights(stage_requirements, losses)
-        total_loss = sum(self.loss_weights[key] * value for key, value in losses.items())
-        if self.monitoring.check_loss_spike(total_loss.item(), self.config['loss_spike_threshold']):
-            return self._handle_training_error('Loss spike detected')
-        try:
+            
+            # Backward pass with gradient clipping
+            self.optimizer.zero_grad()
             total_loss.backward()
-            grad_norm = torch.nn.utils.clip_grad_norm_(self.child.parameters(), self.config['gradient_clip_norm'])
-            if self.monitoring.check_gradient_issues(grad_norm):
-                return self._handle_training_error('Gradient issues detected')
-        except RuntimeError as e:
-            self.monitoring.log_error('backward_pass', str(e))
-            return self._handle_training_error('Backward pass failed')
-        self.optimizer.step()
-        self.scheduler.step()
-        self.memory.record_experience(stimulus, child_output, total_loss.item(), time.time(), self.child.emotional_state)
-        stage_update = self.curriculum.update_stage({
-            'success_rate': (1.0 - total_loss.item()),
-            'emotional_stability': regulated_emotion.get('emotional_state').mean().item(),
-            'cognitive_complexity': self.metacognition(child_output).get('complexity', torch.tensor(0.5, device=self.device)).item(),
-            'social_awareness': self.child.last_attachment_trust.item()
-        })
-        if stage_update:
-            self.monitoring.error_log.append({'step': self.monitoring.steps, 'transition': stage_update, 'timestamp': time.time()})
-        stats = self.monitoring.update_stats(
-            total_loss=total_loss.item(),
-            individual_losses={k: v.item() if torch.is_tensor(v) else v for k, v in losses.items()},
-            gradient_norm=grad_norm,
-            learning_rate=self.scheduler.get_last_lr()[0]
-        )
-        if self.monitoring.steps % self.config['checkpoint_interval'] == 0:
-            self.checkpointing.save_checkpoint(step=self.monitoring.steps, loss=total_loss.item(), stats=stats)
-        return stats
-
-    def _compute_losses(self, child_output, regulated_emotion, mother_response, stage_requirements) -> dict:
-        moral_loss = nn.MSELoss()(self.child.morality(child_output)['moral_score'], torch.tensor(mother_response.get('reward_score', 0.5), device=self.device))
-        target_trust = torch.tensor(mother_response.get('emotional_context', {}).get('trust', 0.5), device=self.device)
-        attachment_loss = nn.MSELoss()(self.child.last_attachment_trust, target_trust)
-        base_emotional_loss = nn.MSELoss()(regulated_emotion['emotional_state'], torch.tensor(mother_response.get('emotional_vector', [0.5]*4), device=self.device))
-        allowed_range = stage_requirements['metrics'].get('emotional_stability', 0.5)
-        range_penalty = torch.relu(torch.abs(regulated_emotion['emotional_state']) - allowed_range).mean()
-        emotional_loss = base_emotional_loss + 0.5 * range_penalty
-        target_complexity = stage_requirements['metrics'].get('language_complexity', 0.5)
-        output_complexity = self.metacognition(child_output).get('complexity', torch.tensor(0.5, device=self.device))
-        cognitive_loss = nn.MSELoss()(output_complexity, torch.tensor(target_complexity, device=self.device))
+            torch.nn.utils.clip_grad_norm_(
+                self.child_model.parameters(),
+                self.gradient_clip_norm
+            )
+            self.optimizer.step()
+            
+            # Update learning rate with warmup
+            if self.steps < self.warmup_steps:
+                lr_scale = min(1.0, float(self.steps) / self.warmup_steps)
+                for pg in self.optimizer.param_groups:
+                    pg['lr'] = self.learning_rate * lr_scale
+            
+            # Track performance
+            performance = 1.0 - total_loss.item()
+            self.performance_history.append(performance)
+            
+            if performance > self.best_performance:
+                self.best_performance = performance
+            
+            return total_loss.item()
+            
+        except Exception as e:
+            print(f"Error in training step: {str(e)}")
+            return float('inf')
+    
+    def _compute_reconstruction_loss(self,
+                                   output: torch.Tensor,
+                                   target: torch.Tensor) -> torch.Tensor:
+        """Compute reconstruction loss"""
+        return nn.functional.mse_loss(output, target)
+    
+    def _compute_emotional_loss(self, output: torch.Tensor) -> torch.Tensor:
+        """Compute emotional regulation loss"""
+        try:
+            emotional_state = self.emotional_regulation(output)
+            target_state = torch.zeros_like(emotional_state)
+            target_state[0] = 0.7  # Target for positive emotion
+            return nn.functional.mse_loss(emotional_state, target_state)
+        except Exception:
+            return torch.tensor(0.0, device=self.device)
+    
+    def _compute_complexity_loss(self,
+                               output: torch.Tensor,
+                               stage_char: Any) -> torch.Tensor:
+        """Compute complexity-based loss"""
+        try:
+            # Get complexity range for current stage
+            min_complexity, max_complexity = stage_char.complexity_range
+            
+            # Calculate output complexity (using standard deviation as a proxy)
+            complexity = torch.std(output)
+            
+            # Scale complexity to match stage requirements
+            target_complexity = torch.tensor(
+                (min_complexity + max_complexity) / 2,
+                device=self.device
+            )
+            
+            return nn.functional.mse_loss(complexity, target_complexity)
+        except Exception:
+            return torch.tensor(0.0, device=self.device)
+    
+    def get_performance_metrics(self) -> Dict[str, float]:
+        """Get current performance metrics"""
+        if not self.performance_history:
+            return {
+                'current_performance': 0.0,
+                'best_performance': 0.0,
+                'average_performance': 0.0,
+                'learning_rate': self.learning_rate
+            }
+            
+        current = self.performance_history[-1]
+        average = np.mean(self.performance_history[-100:])  # Last 100 steps
+        
         return {
-            'moral': moral_loss,
-            'attachment': attachment_loss,
-            'emotional': emotional_loss,
-            'cognitive': cognitive_loss
+            'current_performance': current,
+            'best_performance': self.best_performance,
+            'average_performance': average,
+            'learning_rate': self.optimizer.param_groups[0]['lr']
         }
-
-    def _handle_training_error(self, error_type: str) -> dict:
-        last_stable = self.checkpointing.load_last_stable()
-        if last_stable:
-            print(f"Rolling back to step {last_stable['step']} due to {error_type}")
-            return {'error': error_type, 'rollback_step': last_stable['step'], 'status': 'rolled_back'}
-        return {'error': error_type, 'status': 'failed'}
+    
+    def save_checkpoint(self, path: str):
+        """Save trainer state"""
+        torch.save({
+            'steps': self.steps,
+            'best_performance': self.best_performance,
+            'model_state': self.child_model.state_dict(),
+            'optimizer_state': self.optimizer.state_dict(),
+            'performance_history': self.performance_history
+        }, path)
+    
+    def load_checkpoint(self, path: str):
+        """Load trainer state"""
+        checkpoint = torch.load(path, map_location=self.device)
+        self.steps = checkpoint['steps']
+        self.best_performance = checkpoint['best_performance']
+        self.child_model.load_state_dict(checkpoint['model_state'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state'])
+        self.performance_history = checkpoint['performance_history']
 
     def train_episode(self, num_steps: int = 1000) -> dict:
         episode_stats = []
-        early_stopping = EarlyStopping(patience=self.config['early_stopping_patience'])
+        early_stopping = EarlyStopping(patience=config['early_stopping_patience'])
         for step in range(num_steps):
-            mother_stimulus = self.mother.generate_stimulus(self.curriculum.current_stage, self.child.express_feeling())
-            step_stats = self.training_step(mother_stimulus['embedding'], mother_stimulus)
-            if step_stats.get('error'):
-                if step_stats['status'] == 'failed':
-                    print(f"Training failed at step {step}: {step_stats['error']}")
-                    break
-                continue
-            episode_stats.append(step_stats)
-            if early_stopping.check(step_stats['total_loss']):
+            mother_stimulus = self.mother.generate_stimulus(self.curriculum.current_stage, self.child_model.express_feeling())
+            step_stats = self.training_step(mother_stimulus['embedding'])
+            if step_stats == float('inf'):
+                print(f"Training failed at step {step}")
+                break
+            episode_stats.append({
+                'step': step,
+                'total_loss': step_stats,
+                'performance': self.get_performance_metrics()['current_performance']
+            })
+            if early_stopping.check(step_stats):
                 print(f"Early stopping triggered at step {step}")
                 break
         return self.monitoring.summarize_episode(episode_stats)
