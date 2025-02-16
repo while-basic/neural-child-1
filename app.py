@@ -79,13 +79,23 @@ def ensure_tensor_device(tensor, target_device=None):
     return tensor
 
 def calculate_complexity_level():
-    """Calculate current complexity level based on various factors"""
+    """Calculate current complexity level based on various factors with time acceleration"""
     child = st.session_state.child
     stage_value = child.curriculum.current_stage.value
     emotional_complexity = np.mean(child.emotional_state.cpu().numpy())
     learning_progress = len(st.session_state.learning_history)
-    return (stage_value * 0.4 + emotional_complexity * 0.3 + 
-            (learning_progress/100) * 0.3) * 10  # Scale to 0-100
+    
+    # Calculate age-based acceleration
+    age_hours = (datetime.now() - st.session_state.birth_time).total_seconds() * 60  # Convert to accelerated hours
+    age_months = age_hours / (30 * 24)  # Convert hours to months
+    age_factor = min(1.0, age_months / 12)  # Cap at 1 year for scaling
+    
+    return (
+        stage_value * 0.3 +  # Reduce stage weight
+        emotional_complexity * 0.2 +  # Reduce emotional weight
+        (learning_progress/100) * 0.2 +  # Reduce learning weight
+        age_factor * 0.3  # Add age-based acceleration
+    ) * 100  # Scale to 0-100
 
 def render_milestone_timeline():
     """Render interactive milestone timeline"""
@@ -250,41 +260,56 @@ def render_learning_achievements():
                 st.write(f"Milestone: {achievement['milestone']}")
                 st.write(f"Stage: {achievement['stage']}")
 
+def track_milestone_progress(milestone, progress_value):
+    """Track progress towards individual milestones"""
+    if 'milestone_progress' not in st.session_state:
+        st.session_state.milestone_progress = {}
+    
+    st.session_state.milestone_progress[milestone] = progress_value
+
 def render_upcoming_milestones():
-    """Display upcoming milestones"""
+    """Display upcoming milestones with progress bars"""
     try:
         stage = st.session_state.child.curriculum.current_stage
         
-        # Safety check for stage
-        if not isinstance(stage, DevelopmentalStage):
-            st.error("Invalid stage type")
-            return
+        # Initialize milestone progress if not exists
+        if 'milestone_progress' not in st.session_state:
+            st.session_state.milestone_progress = {}
         
         # Get stage requirements using the new API
         stage_reqs = st.session_state.child.curriculum.get_stage_requirements()
         
-        # Display current milestones
+        # Display current milestones with completion status
         st.write("Current Milestones:")
         current_milestones = stage_reqs.get('current_milestones', [])
         if current_milestones:
             for milestone in current_milestones:
-                st.write(f"✓ {milestone}")
+                progress = st.session_state.milestone_progress.get(milestone, 1.0)  # Current milestones are complete
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"✓ {milestone}")
+                with col2:
+                    st.progress(progress)
         else:
             st.write("No current milestones defined")
         
-        # Display upcoming milestones
+        # Display upcoming milestones with progress
         st.write("\nUpcoming Milestones:")
         upcoming_milestones = stage_reqs.get('upcoming_milestones', [])
         if upcoming_milestones:
             for milestone in upcoming_milestones:
-                st.write(f"○ {milestone}")
+                progress = st.session_state.milestone_progress.get(milestone, 0.0)
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"○ {milestone}")
+                with col2:
+                    st.progress(progress)
         else:
             st.write("No upcoming milestones defined")
         
-        # Display next stage milestones if available
+        # Display next stage milestones
         if stage.value < len(DevelopmentalStage) - 1:
             try:
-                # Create a temporary system for next stage
                 next_stage = DevelopmentalStage(stage.value + 1)
                 temp_system = DevelopmentalSystem()
                 temp_system.current_stage = next_stage
@@ -294,7 +319,12 @@ def render_upcoming_milestones():
                 if next_milestones:
                     st.write(f"\nNext Stage ({next_stage.name}) Milestones:")
                     for milestone in next_milestones:
-                        st.write(f"◇ {milestone}")
+                        progress = st.session_state.milestone_progress.get(milestone, 0.0)
+                        col1, col2 = st.columns([3, 1])
+                        with col1:
+                            st.write(f"◇ {milestone}")
+                        with col2:
+                            st.progress(progress)
             except Exception as e:
                 if st.sidebar.checkbox("Debug Mode", value=False):
                     st.error(f"Error loading next stage: {str(e)}")
@@ -385,29 +415,24 @@ def format_json_response(response_data):
         return str(response_data)
 
 def format_detailed_age(birth_time):
-    """Format age with detailed breakdown"""
+    """Format age with detailed breakdown and time acceleration"""
     now = datetime.now()
     delta = now - birth_time
     
-    total_seconds = delta.total_seconds()
+    # Apply time acceleration: 1 real minute = 1 baby hour
+    accelerated_seconds = delta.total_seconds() * 60  # Convert minutes to hours
     
     # Calculate all time units
-    weeks = int(total_seconds // (7 * 24 * 3600))
-    days = int((total_seconds % (7 * 24 * 3600)) // (24 * 3600))
-    hours = int((total_seconds % (24 * 3600)) // 3600)
-    minutes = int((total_seconds % 3600) // 60)
-    seconds = int(total_seconds % 60)
+    months = int(accelerated_seconds // (30 * 24 * 3600))  # Approximate months
+    days = int((accelerated_seconds % (30 * 24 * 3600)) // (24 * 3600))
+    hours = int((accelerated_seconds % (24 * 3600)) // 3600)
     
     parts = []
-    if weeks > 0:
-        parts.append(f"{weeks}w")
-    if days > 0 or weeks > 0:
+    if months > 0:
+        parts.append(f"{months}mo")
+    if days > 0 or months > 0:
         parts.append(f"{days}d")
-    if hours > 0 or days > 0 or weeks > 0:
-        parts.append(f"{hours}h")
-    if minutes > 0 or hours > 0 or days > 0 or weeks > 0:
-        parts.append(f"{minutes}m")
-    parts.append(f"{seconds}s")  # Always show seconds
+    parts.append(f"{hours}h")
     
     return " ".join(parts)
 
@@ -422,137 +447,45 @@ def stream_llm_logs():
     except Exception as e:
         yield f"Error connecting to LM Studio server: {str(e)}"
 
-def main():
-    # Define stage_templates at the start of main()
-    stage_templates = {
-        DevelopmentalStage.NEWBORN: [
-            "👶 [FEED] Feed the baby",
-            "😴 [SLEEP] Help sleep",
-            "🤗 [COMFORT] Comfort",
-            "🎵 [SOOTHE] Soothe with sounds",
-            "👀 [STIMULATE] Visual stimulation"
-        ],
-        DevelopmentalStage.EARLY_INFANCY: [
-            "😊 [SMILE] Social smile",
-            "🎈 [PLAY] Play peek-a-boo",
-            "🗣️ [TALK] Baby talk",
-            "🤲 [TOUCH] Gentle touch",
-            "🎵 [SING] Sing lullaby"
-        ],
-        DevelopmentalStage.LATE_INFANCY: [
-            "🚶 [ENCOURAGE] Encourage movement",
-            "🎯 [GUIDE] Guide exploration",
-            "🛡️ [PROTECT] Ensure safety",
-            "🎮 [PLAY] Interactive play",
-            "👋 [TEACH] Wave bye-bye"
-        ],
-        DevelopmentalStage.EARLY_TODDLER: [
-            "📚 [TEACH] Basic words",
-            "🚶‍♂️ [GUIDE] Walking practice",
-            "🌟 [ENCOURAGE] New skills",
-            "🎨 [CREATE] Simple art",
-            "🧩 [SOLVE] Simple puzzles"
-        ],
-        DevelopmentalStage.LATE_TODDLER: [
-            "📝 [TEACH] New words",
-            "🎮 [PLAY] Pretend play",
-            "✨ [PRAISE] Good behavior",
-            "🤝 [SHARE] Teaching sharing",
-            "🎨 [CREATE] Drawing shapes"
-        ],
-        DevelopmentalStage.EARLY_PRESCHOOL: [
-            "🎭 [PRETEND] Imaginative play",
-            "📖 [STORY] Storytelling",
-            "🎨 [CREATE] Art project",
-            "🔢 [COUNT] Number learning",
-            "🌈 [EXPLORE] Color learning"
-        ],
-        DevelopmentalStage.LATE_PRESCHOOL: [
-            "📚 [READ] Reading practice",
-            "✍️ [WRITE] Writing letters",
-            "🧮 [MATH] Basic math",
-            "🤝 [SOCIAL] Group play",
-            "🎯 [SOLVE] Problem solving"
-        ],
-        DevelopmentalStage.EARLY_CHILDHOOD: [
-            "📖 [READ] Reading together",
-            "✏️ [WRITE] Writing practice",
-            "🔢 [MATH] Number work",
-            "🔍 [DISCOVER] Science exploration",
-            "🎨 [CREATE] Creative projects"
-        ],
-        DevelopmentalStage.MIDDLE_CHILDHOOD: [
-            "📚 [STUDY] Academic work",
-            "🤝 [TEAM] Team projects",
-            "🎯 [GOAL] Goal setting",
-            "🧪 [EXPERIMENT] Science projects",
-            "🎭 [EXPRESS] Self expression"
-        ],
-        DevelopmentalStage.LATE_CHILDHOOD: [
-            "🔍 [RESEARCH] Independent research",
-            "💭 [DISCUSS] Complex topics",
-            "📝 [WRITE] Creative writing",
-            "🤝 [MENTOR] Peer mentoring",
-            "🌟 [ACHIEVE] Achievement focus"
-        ],
-        DevelopmentalStage.EARLY_ELEMENTARY: [
-            "📊 [PROJECT] Project work",
-            "👥 [COLLABORATE] Team collaboration",
-            "🔬 [INVESTIGATE] Scientific method",
-            "📝 [REPORT] Report writing",
-            "🎯 [PLAN] Project planning"
-        ],
-        DevelopmentalStage.MIDDLE_ELEMENTARY: [
-            "🧪 [ANALYZE] Data analysis",
-            "👥 [LEAD] Team leadership",
-            "💡 [INNOVATE] Creative solutions",
-            "📊 [PRESENT] Presentations",
-            "🎯 [ACHIEVE] Goal achievement"
-        ],
-        DevelopmentalStage.LATE_ELEMENTARY: [
-            "🔬 [RESEARCH] Advanced research",
-            "💭 [CRITIQUE] Critical analysis",
-            "📚 [STUDY] Independent study",
-            "🎯 [SOLVE] Complex problems",
-            "👥 [MENTOR] Peer teaching"
-        ],
-        DevelopmentalStage.EARLY_ADOLESCENCE: [
-            "🤔 [REFLECT] Self-reflection",
-            "💭 [EXPLORE] Identity exploration",
-            "🤝 [CONNECT] Social connections",
-            "🎯 [GOAL] Personal goals",
-            "💡 [EXPRESS] Self expression"
-        ],
-        DevelopmentalStage.MIDDLE_ADOLESCENCE: [
-            "🧭 [GUIDE] Life guidance",
-            "💭 [VALUES] Value discussion",
-            "🎯 [PLAN] Future planning",
-            "👥 [SOCIAL] Social skills",
-            "📚 [LEARN] Advanced learning"
-        ],
-        DevelopmentalStage.LATE_ADOLESCENCE: [
-            "🎓 [PREPARE] College prep",
-            "💼 [CAREER] Career planning",
-            "💰 [FINANCE] Financial planning",
-            "🤝 [RELATE] Relationships",
-            "🌟 [GROW] Personal growth"
-        ],
-        DevelopmentalStage.YOUNG_ADULT: [
-            "💼 [CAREER] Career development",
-            "💡 [LIFE] Life skills",
-            "💰 [MANAGE] Financial management",
-            "❤️ [RELATE] Relationships",
-            "🎯 [ACHIEVE] Goal achievement"
-        ],
-        DevelopmentalStage.MATURE_ADULT: [
-            "🌟 [WISDOM] Share wisdom",
-            "👥 [MENTOR] Mentorship",
-            "🌍 [IMPACT] Community impact",
-            "💭 [REFLECT] Life reflection",
-            "🎯 [LEGACY] Legacy building"
-        ]
-    }
+def add_time_controls():
+    """Add time acceleration controls to the sidebar"""
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("⏰ Time Controls")
+    
+    # Display current accelerated age
+    age = format_detailed_age(st.session_state.birth_time)
+    st.sidebar.markdown(f"**Accelerated Age:** {age}")
+    
+    # Display time acceleration info
+    st.sidebar.markdown("""
+    **Time Acceleration:**
+    - 1 real minute = 1 baby hour
+    - 1 real hour = 60 baby hours
+    - 1 real day = 60 baby days
+    """)
+    
+    # Add development speed indicator
+    dev_speed = calculate_development_speed()
+    st.sidebar.markdown(f"**Development Speed:** {dev_speed:.1f}x normal")
 
+def calculate_development_speed():
+    """Calculate current development speed multiplier"""
+    if not st.session_state.learning_history:
+        return 1.0
+    
+    # Calculate learning rate based on recent history
+    recent_count = len(st.session_state.learning_history[-10:])
+    time_window = (datetime.now() - st.session_state.birth_time).total_seconds() / 60  # in accelerated hours
+    
+    if time_window == 0:
+        return 1.0
+        
+    return (recent_count / time_window) * 10  # Scale for display
+
+def main():
+    # Add time controls to sidebar
+    add_time_controls()
+    
     if DigitalChild is None:
         st.error("Cannot run application: Required modules not found")
         return
@@ -566,14 +499,15 @@ def main():
     # Top-level metrics dashboard
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        # Use birth_time from session state instead of child object
-        st.metric("Age", format_detailed_age(st.session_state.birth_time))
+        age = format_detailed_age(st.session_state.birth_time)
+        st.metric("Accelerated Age", age)
     with col2:
         st.metric("Development Stage", st.session_state.child.curriculum.current_stage.name)
     with col3:
         st.metric("Total Interactions", len(st.session_state.conversation_history))
     with col4:
-        st.metric("Learning Progress", f"{len(st.session_state.learning_history)} concepts")
+        dev_speed = calculate_development_speed()
+        st.metric("Development Speed", f"{dev_speed:.1f}x")
     
     # Main content tabs
     tabs = st.tabs([

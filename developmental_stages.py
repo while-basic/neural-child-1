@@ -174,7 +174,7 @@ class DevelopmentalSystem:
         """Determine if the child can progress to the next stage"""
         characteristics = self.get_stage_characteristics()
         
-        # Calculate overall development score
+        # Calculate overall development score with time acceleration
         development_score = (
             self.stage_metrics['success_rate'] * 0.3 +
             self.stage_metrics['emotional_regulation'] * 0.2 +
@@ -184,14 +184,18 @@ class DevelopmentalSystem:
              self.stage_metrics['self_awareness']) * 0.1
         )
         
-        # Check minimum duration in current stage
-        min_duration = interactions_per_stage // 2
+        # Reduce minimum duration requirement with time acceleration
+        min_duration = max(5, interactions_per_stage // 4)  # Minimum 5 interactions
         if self.stage_duration < min_duration:
             return False
             
+        # Lower thresholds slightly to account for accelerated development
+        min_success_rate = characteristics.success_criteria['min_success_rate'] * 0.8
+        progression_threshold = characteristics.success_criteria['progression_threshold'] * 0.8
+        
         return (
-            development_score > characteristics.success_criteria['progression_threshold'] and
-            self.stage_metrics['success_rate'] > characteristics.success_criteria['min_success_rate']
+            development_score > progression_threshold and
+            self.stage_metrics['success_rate'] > min_success_rate
         )
         
     def _advance_stage(self):
