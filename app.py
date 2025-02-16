@@ -435,6 +435,83 @@ def main():
         debug_mode = st.sidebar.checkbox("Debug Mode", value=False, 
                                        help="Show raw LLM responses and processing details")
         
+        # Add interaction guide toggle in sidebar
+        show_interaction_guide = st.sidebar.checkbox("Show Interaction Guide", value=False,
+                                                   help="Display a comprehensive guide of all possible interactions")
+        
+        if show_interaction_guide:
+            st.subheader("📚 Interaction Guide")
+            
+            # Define interaction categories
+            categories = {
+                "Basic Care & Nurturing 👶": {
+                    "description": "Essential care and comfort interactions",
+                    "stages": ["NEWBORN", "EARLY_INFANCY"],
+                    "actions": ["FEED", "SLEEP", "COMFORT", "SOOTHE", "HOLD"]
+                },
+                "Physical Development 🚶": {
+                    "description": "Motor skills and physical activity",
+                    "stages": ["LATE_INFANCY", "EARLY_TODDLER", "LATE_TODDLER"],
+                    "actions": ["ENCOURAGE", "GUIDE", "WALK", "RUN", "CLIMB"]
+                },
+                "Communication & Language 🗣️": {
+                    "description": "Speech and language development",
+                    "stages": ["EARLY_TODDLER", "LATE_TODDLER", "EARLY_PRESCHOOL"],
+                    "actions": ["TALK", "TEACH", "STORY", "READ", "WRITE"]
+                },
+                "Cognitive Development 🧠": {
+                    "description": "Learning and problem-solving",
+                    "stages": ["EARLY_PRESCHOOL", "LATE_PRESCHOOL", "EARLY_CHILDHOOD"],
+                    "actions": ["SOLVE", "COUNT", "MATH", "DISCOVER", "ANALYZE"]
+                },
+                "Creative Expression 🎨": {
+                    "description": "Art and creative activities",
+                    "stages": ["LATE_TODDLER", "EARLY_PRESCHOOL", "LATE_PRESCHOOL"],
+                    "actions": ["CREATE", "DRAW", "PRETEND", "EXPRESS", "IMAGINE"]
+                },
+                "Social Skills 🤝": {
+                    "description": "Social interaction and relationships",
+                    "stages": ["EARLY_CHILDHOOD", "MIDDLE_CHILDHOOD", "LATE_CHILDHOOD"],
+                    "actions": ["SHARE", "TEAM", "COLLABORATE", "MENTOR", "SOCIAL"]
+                },
+                "Academic Learning 📚": {
+                    "description": "Formal education and study",
+                    "stages": ["EARLY_ELEMENTARY", "MIDDLE_ELEMENTARY", "LATE_ELEMENTARY"],
+                    "actions": ["STUDY", "RESEARCH", "PROJECT", "INVESTIGATE", "REPORT"]
+                },
+                "Personal Development 🌱": {
+                    "description": "Self-awareness and growth",
+                    "stages": ["EARLY_ADOLESCENCE", "MIDDLE_ADOLESCENCE", "LATE_ADOLESCENCE"],
+                    "actions": ["REFLECT", "EXPLORE", "PLAN", "GOAL", "GROW"]
+                },
+                "Life Skills 🎯": {
+                    "description": "Practical life and career skills",
+                    "stages": ["LATE_ADOLESCENCE", "YOUNG_ADULT"],
+                    "actions": ["CAREER", "MANAGE", "PREPARE", "FINANCE", "LIFE"]
+                },
+                "Wisdom & Legacy 🌟": {
+                    "description": "Advanced personal development",
+                    "stages": ["YOUNG_ADULT", "MATURE_ADULT"],
+                    "actions": ["WISDOM", "MENTOR", "IMPACT", "LEGACY", "REFLECT"]
+                }
+            }
+            
+            # Display categorized interactions
+            for category, info in categories.items():
+                with st.expander(category, expanded=False):
+                    st.write(f"**Description:** {info['description']}")
+                    st.write("**Relevant Stages:**")
+                    for stage in info['stages']:
+                        st.write(f"- {stage.replace('_', ' ').title()}")
+                    st.write("**Available Actions:**")
+                    for action in info['actions']:
+                        # Find the corresponding template with emoji
+                        emoji = next((t.split()[0] for templates in stage_templates.values() 
+                                   for t in templates if f"[{action}]" in t), "▫️")
+                        st.write(f"{emoji} [{action}]")
+            
+            st.divider()
+        
         col1, col2 = st.columns([2, 1])
         
         with col1:
@@ -443,28 +520,247 @@ def main():
             # Interact with Child
             st.subheader("Interact with Child")
             current_behaviors = st.session_state.child.curriculum.get_stage_requirements()['behaviors']
-            template_options = list(current_behaviors['allowed_actions'])
             
-            col1, col2 = st.columns([3, 1])
-            with col1:
+            # Define stage-specific interaction templates with emojis
+            stage_templates = {
+                DevelopmentalStage.NEWBORN: [
+                    "👶 [FEED] Feed the baby",
+                    "😴 [SLEEP] Help sleep",
+                    "🤗 [COMFORT] Comfort",
+                    "🎵 [SOOTHE] Soothe with sounds",
+                    "👀 [STIMULATE] Visual stimulation"
+                ],
+                DevelopmentalStage.EARLY_INFANCY: [
+                    "😊 [SMILE] Social smile",
+                    "🎈 [PLAY] Play peek-a-boo",
+                    "🗣️ [TALK] Baby talk",
+                    "🤲 [TOUCH] Gentle touch",
+                    "🎵 [SING] Sing lullaby"
+                ],
+                DevelopmentalStage.LATE_INFANCY: [
+                    "🚶 [ENCOURAGE] Encourage movement",
+                    "🎯 [GUIDE] Guide exploration",
+                    "🛡️ [PROTECT] Ensure safety",
+                    "🎮 [PLAY] Interactive play",
+                    "👋 [TEACH] Wave bye-bye"
+                ],
+                DevelopmentalStage.EARLY_TODDLER: [
+                    "📚 [TEACH] Basic words",
+                    "🚶‍♂️ [GUIDE] Walking practice",
+                    "🌟 [ENCOURAGE] New skills",
+                    "🎨 [CREATE] Simple art",
+                    "🧩 [SOLVE] Simple puzzles"
+                ],
+                DevelopmentalStage.LATE_TODDLER: [
+                    "📝 [TEACH] New words",
+                    "🎮 [PLAY] Pretend play",
+                    "✨ [PRAISE] Good behavior",
+                    "🤝 [SHARE] Teaching sharing",
+                    "🎨 [CREATE] Drawing shapes"
+                ],
+                DevelopmentalStage.EARLY_PRESCHOOL: [
+                    "🎭 [PRETEND] Imaginative play",
+                    "📖 [STORY] Storytelling",
+                    "🎨 [CREATE] Art project",
+                    "🔢 [COUNT] Number learning",
+                    "🌈 [EXPLORE] Color learning"
+                ],
+                DevelopmentalStage.LATE_PRESCHOOL: [
+                    "📚 [READ] Reading practice",
+                    "✍️ [WRITE] Writing letters",
+                    "🧮 [MATH] Basic math",
+                    "🤝 [SOCIAL] Group play",
+                    "🎯 [SOLVE] Problem solving"
+                ],
+                DevelopmentalStage.EARLY_CHILDHOOD: [
+                    "📖 [READ] Reading together",
+                    "✏️ [WRITE] Writing practice",
+                    "🔢 [MATH] Number work",
+                    "🔍 [DISCOVER] Science exploration",
+                    "🎨 [CREATE] Creative projects"
+                ],
+                DevelopmentalStage.MIDDLE_CHILDHOOD: [
+                    "📚 [STUDY] Academic work",
+                    "🤝 [TEAM] Team projects",
+                    "🎯 [GOAL] Goal setting",
+                    "🧪 [EXPERIMENT] Science projects",
+                    "🎭 [EXPRESS] Self expression"
+                ],
+                DevelopmentalStage.LATE_CHILDHOOD: [
+                    "🔍 [RESEARCH] Independent research",
+                    "💭 [DISCUSS] Complex topics",
+                    "📝 [WRITE] Creative writing",
+                    "🤝 [MENTOR] Peer mentoring",
+                    "🌟 [ACHIEVE] Achievement focus"
+                ],
+                DevelopmentalStage.EARLY_ELEMENTARY: [
+                    "📊 [PROJECT] Project work",
+                    "👥 [COLLABORATE] Team collaboration",
+                    "🔬 [INVESTIGATE] Scientific method",
+                    "📝 [REPORT] Report writing",
+                    "🎯 [PLAN] Project planning"
+                ],
+                DevelopmentalStage.MIDDLE_ELEMENTARY: [
+                    "🧪 [ANALYZE] Data analysis",
+                    "👥 [LEAD] Team leadership",
+                    "💡 [INNOVATE] Creative solutions",
+                    "📊 [PRESENT] Presentations",
+                    "🎯 [ACHIEVE] Goal achievement"
+                ],
+                DevelopmentalStage.LATE_ELEMENTARY: [
+                    "🔬 [RESEARCH] Advanced research",
+                    "💭 [CRITIQUE] Critical analysis",
+                    "📚 [STUDY] Independent study",
+                    "🎯 [SOLVE] Complex problems",
+                    "👥 [MENTOR] Peer teaching"
+                ],
+                DevelopmentalStage.EARLY_ADOLESCENCE: [
+                    "🤔 [REFLECT] Self-reflection",
+                    "💭 [EXPLORE] Identity exploration",
+                    "🤝 [CONNECT] Social connections",
+                    "🎯 [GOAL] Personal goals",
+                    "💡 [EXPRESS] Self expression"
+                ],
+                DevelopmentalStage.MIDDLE_ADOLESCENCE: [
+                    "🧭 [GUIDE] Life guidance",
+                    "💭 [VALUES] Value discussion",
+                    "🎯 [PLAN] Future planning",
+                    "👥 [SOCIAL] Social skills",
+                    "📚 [LEARN] Advanced learning"
+                ],
+                DevelopmentalStage.LATE_ADOLESCENCE: [
+                    "🎓 [PREPARE] College prep",
+                    "💼 [CAREER] Career planning",
+                    "💰 [FINANCE] Financial planning",
+                    "🤝 [RELATE] Relationships",
+                    "🌟 [GROW] Personal growth"
+                ],
+                DevelopmentalStage.YOUNG_ADULT: [
+                    "💼 [CAREER] Career development",
+                    "💡 [LIFE] Life skills",
+                    "💰 [MANAGE] Financial management",
+                    "❤️ [RELATE] Relationships",
+                    "🎯 [ACHIEVE] Goal achievement"
+                ],
+                DevelopmentalStage.MATURE_ADULT: [
+                    "🌟 [WISDOM] Share wisdom",
+                    "👥 [MENTOR] Mentorship",
+                    "🌍 [IMPACT] Community impact",
+                    "💭 [REFLECT] Life reflection",
+                    "🎯 [LEGACY] Legacy building"
+                ]
+            }
+
+            current_stage = st.session_state.child.curriculum.current_stage
+            
+            # Create a list of all interactions with their stage information
+            all_interactions = []
+            for stage, templates in stage_templates.items():
+                for template in templates:
+                    all_interactions.append({
+                        "template": template,
+                        "stage": stage.name,
+                        "is_current": stage == current_stage
+                    })
+
+            # Interaction selection method
+            selection_method = st.radio(
+                "Interaction Selection Method:",
+                ["Stage-Appropriate", "All Interactions", "By Category"],
+                horizontal=True
+            )
+
+            if selection_method == "Stage-Appropriate":
+                template_options = stage_templates.get(current_stage, ["Custom"])
                 selected_template = st.selectbox(
-                    "Interaction Type:", 
+                    "Current Stage Interactions:", 
                     ["Custom"] + template_options,
                     key="interaction_type"
                 )
-                
-                if selected_template == "Custom":
-                    user_input = st.text_input(
-                        "Say something to the child:", 
-                        key="user_input"
-                    )
-                else:
-                    user_input = st.text_input(
-                        "Say something to the child:",
-                        value=f"[{selected_template.upper()}]",
-                        key="user_input"
-                    )
             
+            elif selection_method == "All Interactions":
+                # Group interactions by stage
+                st.write("💡 Current stage interactions are highlighted in green")
+                selected_template = st.selectbox(
+                    "All Available Interactions:",
+                    ["Custom"] + [
+                        f"{interaction['template']} {'✨' if interaction['is_current'] else ''}"
+                        for interaction in all_interactions
+                    ],
+                    key="interaction_type_all",
+                    format_func=lambda x: x.replace("✨", " (Current Stage)") if "✨" in x else x
+                )
+                # Remove the ✨ if present
+                if selected_template != "Custom":
+                    selected_template = selected_template.replace(" ✨", "")
+            
+            else:  # By Category
+                # Create category mapping
+                interaction_categories = {
+                    "Basic Care (0-6 months) 👶": [t for t in all_interactions 
+                        if t["stage"] in ["NEWBORN", "EARLY_INFANCY"]],
+                    "Early Development (6-24 months) 🚶": [t for t in all_interactions 
+                        if t["stage"] in ["LATE_INFANCY", "EARLY_TODDLER", "LATE_TODDLER"]],
+                    "Preschool Learning (2-4 years) 📚": [t for t in all_interactions 
+                        if t["stage"] in ["EARLY_PRESCHOOL", "LATE_PRESCHOOL"]],
+                    "Early Education (4-7 years) 🎓": [t for t in all_interactions 
+                        if t["stage"] in ["EARLY_CHILDHOOD", "MIDDLE_CHILDHOOD", "LATE_CHILDHOOD"]],
+                    "Elementary Development (7-11 years) 🏫": [t for t in all_interactions 
+                        if t["stage"] in ["EARLY_ELEMENTARY", "MIDDLE_ELEMENTARY", "LATE_ELEMENTARY"]],
+                    "Adolescent Growth (11-18 years) 🌱": [t for t in all_interactions 
+                        if t["stage"] in ["EARLY_ADOLESCENCE", "MIDDLE_ADOLESCENCE", "LATE_ADOLESCENCE"]],
+                    "Adult Development (18+ years) 🌟": [t for t in all_interactions 
+                        if t["stage"] in ["YOUNG_ADULT", "MATURE_ADULT"]]
+                }
+                
+                # Category selection
+                selected_category = st.selectbox(
+                    "Select Age Category:",
+                    list(interaction_categories.keys()),
+                    key="category_select"
+                )
+                
+                # Show interactions for selected category
+                st.write("💡 Current stage interactions are highlighted in green")
+                selected_template = st.selectbox(
+                    f"Interactions for {selected_category}:",
+                    ["Custom"] + [
+                        f"{interaction['template']} {'✨' if interaction['is_current'] else ''}"
+                        for interaction in interaction_categories[selected_category]
+                    ],
+                    key="interaction_type_category",
+                    format_func=lambda x: x.replace("✨", " (Current Stage)") if "✨" in x else x
+                )
+                # Remove the ✨ if present
+                if selected_template != "Custom":
+                    selected_template = selected_template.replace(" ✨", "")
+
+            # Input field
+            if selected_template == "Custom":
+                user_input = st.text_input(
+                    "Say something to the child:", 
+                    key="user_input"
+                )
+            else:
+                # Extract the action part from the template
+                action = selected_template.split("] ")[0] + "]"
+                user_input = st.text_input(
+                    "Say something to the child:",
+                    value=action,
+                    key="user_input"
+                )
+
+            # Add a warning if using interaction from a different stage
+            if selected_template != "Custom":
+                template_stage = next(
+                    (interaction["stage"] for interaction in all_interactions 
+                     if interaction["template"] == selected_template),
+                    None
+                )
+                if template_stage and template_stage != current_stage.name:
+                    st.warning(f"⚠️ This interaction is designed for the {template_stage.replace('_', ' ').title()} stage. Current stage is {current_stage.name.replace('_', ' ').title()}. Adjust your approach accordingly.")
+
+            col1, col2 = st.columns([3, 1])
             with col2:
                 st.write("")
                 st.write("")
