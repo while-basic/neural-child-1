@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import config
+from config import config
 from attachment import AttachmentSystem
 from defense_mechanisms import DefenseMechanisms
 from theory_of_mind import TheoryOfMind

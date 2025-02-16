@@ -11,6 +11,10 @@ from developmental_stages import DevelopmentalStage
 from config import STAGE_DEFINITIONS
 import json
 import torch.serialization
+import requests
+import sseclient
+import threading
+import queue
 
 try:
     from main import DigitalChild, MotherLLM
@@ -400,7 +404,148 @@ def format_detailed_age(birth_time):
     
     return " ".join(parts)
 
+def stream_llm_logs():
+    """Stream logs from LM Studio server"""
+    try:
+        response = requests.get('http://localhost:1234/v1/chat/completions', stream=True)
+        client = sseclient.SSEClient(response)
+        for event in client.events():
+            if event.data:
+                yield event.data
+    except Exception as e:
+        yield f"Error connecting to LM Studio server: {str(e)}"
+
 def main():
+    # Define stage_templates at the start of main()
+    stage_templates = {
+        DevelopmentalStage.NEWBORN: [
+            "👶 [FEED] Feed the baby",
+            "😴 [SLEEP] Help sleep",
+            "🤗 [COMFORT] Comfort",
+            "🎵 [SOOTHE] Soothe with sounds",
+            "👀 [STIMULATE] Visual stimulation"
+        ],
+        DevelopmentalStage.EARLY_INFANCY: [
+            "😊 [SMILE] Social smile",
+            "🎈 [PLAY] Play peek-a-boo",
+            "🗣️ [TALK] Baby talk",
+            "🤲 [TOUCH] Gentle touch",
+            "🎵 [SING] Sing lullaby"
+        ],
+        DevelopmentalStage.LATE_INFANCY: [
+            "🚶 [ENCOURAGE] Encourage movement",
+            "🎯 [GUIDE] Guide exploration",
+            "🛡️ [PROTECT] Ensure safety",
+            "🎮 [PLAY] Interactive play",
+            "👋 [TEACH] Wave bye-bye"
+        ],
+        DevelopmentalStage.EARLY_TODDLER: [
+            "📚 [TEACH] Basic words",
+            "🚶‍♂️ [GUIDE] Walking practice",
+            "🌟 [ENCOURAGE] New skills",
+            "🎨 [CREATE] Simple art",
+            "🧩 [SOLVE] Simple puzzles"
+        ],
+        DevelopmentalStage.LATE_TODDLER: [
+            "📝 [TEACH] New words",
+            "🎮 [PLAY] Pretend play",
+            "✨ [PRAISE] Good behavior",
+            "🤝 [SHARE] Teaching sharing",
+            "🎨 [CREATE] Drawing shapes"
+        ],
+        DevelopmentalStage.EARLY_PRESCHOOL: [
+            "🎭 [PRETEND] Imaginative play",
+            "📖 [STORY] Storytelling",
+            "🎨 [CREATE] Art project",
+            "🔢 [COUNT] Number learning",
+            "🌈 [EXPLORE] Color learning"
+        ],
+        DevelopmentalStage.LATE_PRESCHOOL: [
+            "📚 [READ] Reading practice",
+            "✍️ [WRITE] Writing letters",
+            "🧮 [MATH] Basic math",
+            "🤝 [SOCIAL] Group play",
+            "🎯 [SOLVE] Problem solving"
+        ],
+        DevelopmentalStage.EARLY_CHILDHOOD: [
+            "📖 [READ] Reading together",
+            "✏️ [WRITE] Writing practice",
+            "🔢 [MATH] Number work",
+            "🔍 [DISCOVER] Science exploration",
+            "🎨 [CREATE] Creative projects"
+        ],
+        DevelopmentalStage.MIDDLE_CHILDHOOD: [
+            "📚 [STUDY] Academic work",
+            "🤝 [TEAM] Team projects",
+            "🎯 [GOAL] Goal setting",
+            "🧪 [EXPERIMENT] Science projects",
+            "🎭 [EXPRESS] Self expression"
+        ],
+        DevelopmentalStage.LATE_CHILDHOOD: [
+            "🔍 [RESEARCH] Independent research",
+            "💭 [DISCUSS] Complex topics",
+            "📝 [WRITE] Creative writing",
+            "🤝 [MENTOR] Peer mentoring",
+            "🌟 [ACHIEVE] Achievement focus"
+        ],
+        DevelopmentalStage.EARLY_ELEMENTARY: [
+            "📊 [PROJECT] Project work",
+            "👥 [COLLABORATE] Team collaboration",
+            "🔬 [INVESTIGATE] Scientific method",
+            "📝 [REPORT] Report writing",
+            "🎯 [PLAN] Project planning"
+        ],
+        DevelopmentalStage.MIDDLE_ELEMENTARY: [
+            "🧪 [ANALYZE] Data analysis",
+            "👥 [LEAD] Team leadership",
+            "💡 [INNOVATE] Creative solutions",
+            "📊 [PRESENT] Presentations",
+            "🎯 [ACHIEVE] Goal achievement"
+        ],
+        DevelopmentalStage.LATE_ELEMENTARY: [
+            "🔬 [RESEARCH] Advanced research",
+            "💭 [CRITIQUE] Critical analysis",
+            "📚 [STUDY] Independent study",
+            "🎯 [SOLVE] Complex problems",
+            "👥 [MENTOR] Peer teaching"
+        ],
+        DevelopmentalStage.EARLY_ADOLESCENCE: [
+            "🤔 [REFLECT] Self-reflection",
+            "💭 [EXPLORE] Identity exploration",
+            "🤝 [CONNECT] Social connections",
+            "🎯 [GOAL] Personal goals",
+            "💡 [EXPRESS] Self expression"
+        ],
+        DevelopmentalStage.MIDDLE_ADOLESCENCE: [
+            "🧭 [GUIDE] Life guidance",
+            "💭 [VALUES] Value discussion",
+            "🎯 [PLAN] Future planning",
+            "👥 [SOCIAL] Social skills",
+            "📚 [LEARN] Advanced learning"
+        ],
+        DevelopmentalStage.LATE_ADOLESCENCE: [
+            "🎓 [PREPARE] College prep",
+            "💼 [CAREER] Career planning",
+            "💰 [FINANCE] Financial planning",
+            "🤝 [RELATE] Relationships",
+            "🌟 [GROW] Personal growth"
+        ],
+        DevelopmentalStage.YOUNG_ADULT: [
+            "💼 [CAREER] Career development",
+            "💡 [LIFE] Life skills",
+            "💰 [MANAGE] Financial management",
+            "❤️ [RELATE] Relationships",
+            "🎯 [ACHIEVE] Goal achievement"
+        ],
+        DevelopmentalStage.MATURE_ADULT: [
+            "🌟 [WISDOM] Share wisdom",
+            "👥 [MENTOR] Mentorship",
+            "🌍 [IMPACT] Community impact",
+            "💭 [REFLECT] Life reflection",
+            "🎯 [LEGACY] Legacy building"
+        ]
+    }
+
     if DigitalChild is None:
         st.error("Cannot run application: Required modules not found")
         return
@@ -474,73 +619,15 @@ def main():
         if show_interaction_guide:
             st.subheader("📚 Interaction Guide")
             
-            # Define interaction categories
-            categories = {
-                "Basic Care & Nurturing 👶": {
-                    "description": "Essential care and comfort interactions",
-                    "stages": ["NEWBORN", "EARLY_INFANCY"],
-                    "actions": ["FEED", "SLEEP", "COMFORT", "SOOTHE", "HOLD"]
-                },
-                "Physical Development 🚶": {
-                    "description": "Motor skills and physical activity",
-                    "stages": ["LATE_INFANCY", "EARLY_TODDLER", "LATE_TODDLER"],
-                    "actions": ["ENCOURAGE", "GUIDE", "WALK", "RUN", "CLIMB"]
-                },
-                "Communication & Language 🗣️": {
-                    "description": "Speech and language development",
-                    "stages": ["EARLY_TODDLER", "LATE_TODDLER", "EARLY_PRESCHOOL"],
-                    "actions": ["TALK", "TEACH", "STORY", "READ", "WRITE"]
-                },
-                "Cognitive Development 🧠": {
-                    "description": "Learning and problem-solving",
-                    "stages": ["EARLY_PRESCHOOL", "LATE_PRESCHOOL", "EARLY_CHILDHOOD"],
-                    "actions": ["SOLVE", "COUNT", "MATH", "DISCOVER", "ANALYZE"]
-                },
-                "Creative Expression 🎨": {
-                    "description": "Art and creative activities",
-                    "stages": ["LATE_TODDLER", "EARLY_PRESCHOOL", "LATE_PRESCHOOL"],
-                    "actions": ["CREATE", "DRAW", "PRETEND", "EXPRESS", "IMAGINE"]
-                },
-                "Social Skills 🤝": {
-                    "description": "Social interaction and relationships",
-                    "stages": ["EARLY_CHILDHOOD", "MIDDLE_CHILDHOOD", "LATE_CHILDHOOD"],
-                    "actions": ["SHARE", "TEAM", "COLLABORATE", "MENTOR", "SOCIAL"]
-                },
-                "Academic Learning 📚": {
-                    "description": "Formal education and study",
-                    "stages": ["EARLY_ELEMENTARY", "MIDDLE_ELEMENTARY", "LATE_ELEMENTARY"],
-                    "actions": ["STUDY", "RESEARCH", "PROJECT", "INVESTIGATE", "REPORT"]
-                },
-                "Personal Development 🌱": {
-                    "description": "Self-awareness and growth",
-                    "stages": ["EARLY_ADOLESCENCE", "MIDDLE_ADOLESCENCE", "LATE_ADOLESCENCE"],
-                    "actions": ["REFLECT", "EXPLORE", "PLAN", "GOAL", "GROW"]
-                },
-                "Life Skills 🎯": {
-                    "description": "Practical life and career skills",
-                    "stages": ["LATE_ADOLESCENCE", "YOUNG_ADULT"],
-                    "actions": ["CAREER", "MANAGE", "PREPARE", "FINANCE", "LIFE"]
-                },
-                "Wisdom & Legacy 🌟": {
-                    "description": "Advanced personal development",
-                    "stages": ["YOUNG_ADULT", "MATURE_ADULT"],
-                    "actions": ["WISDOM", "MENTOR", "IMPACT", "LEGACY", "REFLECT"]
-                }
-            }
-            
             # Display categorized interactions
-            for category, info in categories.items():
-                with st.expander(category, expanded=False):
-                    st.write(f"**Description:** {info['description']}")
-                    st.write("**Relevant Stages:**")
-                    for stage in info['stages']:
-                        st.write(f"- {stage.replace('_', ' ').title()}")
-                    st.write("**Available Actions:**")
-                    for action in info['actions']:
-                        # Find the corresponding template with emoji
-                        emoji = next((t.split()[0] for templates in stage_templates.values() 
-                                   for t in templates if f"[{action}]" in t), "▫️")
-                        st.write(f"{emoji} [{action}]")
+            for category, info in stage_templates.items():
+                # Convert the stage enum to a readable string
+                stage_name = category.name.replace('_', ' ').title()
+                with st.expander(stage_name, expanded=False):
+                    # Display the first template as a description
+                    st.write(f"**Available Actions:**")
+                    for template in info:
+                        st.write(template)
             
             st.divider()
         
@@ -553,138 +640,6 @@ def main():
             st.subheader("Interact with Child")
             current_behaviors = st.session_state.child.curriculum.get_stage_requirements()['behaviors']
             
-            # Define stage-specific interaction templates with emojis
-            stage_templates = {
-                DevelopmentalStage.NEWBORN: [
-                    "👶 [FEED] Feed the baby",
-                    "😴 [SLEEP] Help sleep",
-                    "🤗 [COMFORT] Comfort",
-                    "🎵 [SOOTHE] Soothe with sounds",
-                    "👀 [STIMULATE] Visual stimulation"
-                ],
-                DevelopmentalStage.EARLY_INFANCY: [
-                    "😊 [SMILE] Social smile",
-                    "🎈 [PLAY] Play peek-a-boo",
-                    "🗣️ [TALK] Baby talk",
-                    "🤲 [TOUCH] Gentle touch",
-                    "🎵 [SING] Sing lullaby"
-                ],
-                DevelopmentalStage.LATE_INFANCY: [
-                    "🚶 [ENCOURAGE] Encourage movement",
-                    "🎯 [GUIDE] Guide exploration",
-                    "🛡️ [PROTECT] Ensure safety",
-                    "🎮 [PLAY] Interactive play",
-                    "👋 [TEACH] Wave bye-bye"
-                ],
-                DevelopmentalStage.EARLY_TODDLER: [
-                    "📚 [TEACH] Basic words",
-                    "🚶‍♂️ [GUIDE] Walking practice",
-                    "🌟 [ENCOURAGE] New skills",
-                    "🎨 [CREATE] Simple art",
-                    "🧩 [SOLVE] Simple puzzles"
-                ],
-                DevelopmentalStage.LATE_TODDLER: [
-                    "📝 [TEACH] New words",
-                    "🎮 [PLAY] Pretend play",
-                    "✨ [PRAISE] Good behavior",
-                    "🤝 [SHARE] Teaching sharing",
-                    "🎨 [CREATE] Drawing shapes"
-                ],
-                DevelopmentalStage.EARLY_PRESCHOOL: [
-                    "🎭 [PRETEND] Imaginative play",
-                    "📖 [STORY] Storytelling",
-                    "🎨 [CREATE] Art project",
-                    "🔢 [COUNT] Number learning",
-                    "🌈 [EXPLORE] Color learning"
-                ],
-                DevelopmentalStage.LATE_PRESCHOOL: [
-                    "📚 [READ] Reading practice",
-                    "✍️ [WRITE] Writing letters",
-                    "🧮 [MATH] Basic math",
-                    "🤝 [SOCIAL] Group play",
-                    "🎯 [SOLVE] Problem solving"
-                ],
-                DevelopmentalStage.EARLY_CHILDHOOD: [
-                    "📖 [READ] Reading together",
-                    "✏️ [WRITE] Writing practice",
-                    "🔢 [MATH] Number work",
-                    "🔍 [DISCOVER] Science exploration",
-                    "🎨 [CREATE] Creative projects"
-                ],
-                DevelopmentalStage.MIDDLE_CHILDHOOD: [
-                    "📚 [STUDY] Academic work",
-                    "🤝 [TEAM] Team projects",
-                    "🎯 [GOAL] Goal setting",
-                    "🧪 [EXPERIMENT] Science projects",
-                    "🎭 [EXPRESS] Self expression"
-                ],
-                DevelopmentalStage.LATE_CHILDHOOD: [
-                    "🔍 [RESEARCH] Independent research",
-                    "💭 [DISCUSS] Complex topics",
-                    "📝 [WRITE] Creative writing",
-                    "🤝 [MENTOR] Peer mentoring",
-                    "🌟 [ACHIEVE] Achievement focus"
-                ],
-                DevelopmentalStage.EARLY_ELEMENTARY: [
-                    "📊 [PROJECT] Project work",
-                    "👥 [COLLABORATE] Team collaboration",
-                    "🔬 [INVESTIGATE] Scientific method",
-                    "📝 [REPORT] Report writing",
-                    "🎯 [PLAN] Project planning"
-                ],
-                DevelopmentalStage.MIDDLE_ELEMENTARY: [
-                    "🧪 [ANALYZE] Data analysis",
-                    "👥 [LEAD] Team leadership",
-                    "💡 [INNOVATE] Creative solutions",
-                    "📊 [PRESENT] Presentations",
-                    "🎯 [ACHIEVE] Goal achievement"
-                ],
-                DevelopmentalStage.LATE_ELEMENTARY: [
-                    "🔬 [RESEARCH] Advanced research",
-                    "💭 [CRITIQUE] Critical analysis",
-                    "📚 [STUDY] Independent study",
-                    "🎯 [SOLVE] Complex problems",
-                    "👥 [MENTOR] Peer teaching"
-                ],
-                DevelopmentalStage.EARLY_ADOLESCENCE: [
-                    "🤔 [REFLECT] Self-reflection",
-                    "💭 [EXPLORE] Identity exploration",
-                    "🤝 [CONNECT] Social connections",
-                    "🎯 [GOAL] Personal goals",
-                    "💡 [EXPRESS] Self expression"
-                ],
-                DevelopmentalStage.MIDDLE_ADOLESCENCE: [
-                    "🧭 [GUIDE] Life guidance",
-                    "💭 [VALUES] Value discussion",
-                    "🎯 [PLAN] Future planning",
-                    "👥 [SOCIAL] Social skills",
-                    "📚 [LEARN] Advanced learning"
-                ],
-                DevelopmentalStage.LATE_ADOLESCENCE: [
-                    "🎓 [PREPARE] College prep",
-                    "💼 [CAREER] Career planning",
-                    "💰 [FINANCE] Financial planning",
-                    "🤝 [RELATE] Relationships",
-                    "🌟 [GROW] Personal growth"
-                ],
-                DevelopmentalStage.YOUNG_ADULT: [
-                    "💼 [CAREER] Career development",
-                    "💡 [LIFE] Life skills",
-                    "💰 [MANAGE] Financial management",
-                    "❤️ [RELATE] Relationships",
-                    "🎯 [ACHIEVE] Goal achievement"
-                ],
-                DevelopmentalStage.MATURE_ADULT: [
-                    "🌟 [WISDOM] Share wisdom",
-                    "👥 [MENTOR] Mentorship",
-                    "🌍 [IMPACT] Community impact",
-                    "💭 [REFLECT] Life reflection",
-                    "🎯 [LEGACY] Legacy building"
-                ]
-            }
-
-            current_stage = st.session_state.child.curriculum.current_stage
-            
             # Create a list of all interactions with their stage information
             all_interactions = []
             for stage, templates in stage_templates.items():
@@ -692,7 +647,7 @@ def main():
                     all_interactions.append({
                         "template": template,
                         "stage": stage.name,
-                        "is_current": stage == current_stage
+                        "is_current": stage == st.session_state.child.curriculum.current_stage
                     })
 
             # Interaction selection method
@@ -703,7 +658,7 @@ def main():
             )
 
             if selection_method == "Stage-Appropriate":
-                template_options = stage_templates.get(current_stage, ["Custom"])
+                template_options = stage_templates.get(st.session_state.child.curriculum.current_stage, ["Custom"])
                 selected_template = st.selectbox(
                     "Current Stage Interactions:", 
                     ["Custom"] + template_options,
@@ -789,8 +744,8 @@ def main():
                      if interaction["template"] == selected_template),
                     None
                 )
-                if template_stage and template_stage != current_stage.name:
-                    st.warning(f"⚠️ This interaction is designed for the {template_stage.replace('_', ' ').title()} stage. Current stage is {current_stage.name.replace('_', ' ').title()}. Adjust your approach accordingly.")
+                if template_stage and template_stage != st.session_state.child.curriculum.current_stage.name:
+                    st.warning(f"⚠️ This interaction is designed for the {template_stage.replace('_', ' ').title()} stage. Current stage is {st.session_state.child.curriculum.current_stage.name.replace('_', ' ').title()}. Adjust your approach accordingly.")
 
             col1, col2 = st.columns([3, 1])
             with col2:
@@ -1053,6 +1008,38 @@ def main():
     
     with save_load_cols[2]:
         st.info("Save/Load functionality preserves all history and development progress.")
+
+    # Add a new section for logs in the sidebar
+    with st.sidebar:
+        st.subheader("🔍 LM Studio Logs")
+        if st.checkbox("Show Server Logs", value=False):
+            log_placeholder = st.empty()
+            
+            # Create a container for scrollable logs
+            with st.container():
+                # Initialize or get log history from session state
+                if 'log_history' not in st.session_state:
+                    st.session_state.log_history = []
+                
+                # Add a clear logs button
+                if st.button("Clear Logs"):
+                    st.session_state.log_history = []
+                
+                # Stream logs
+                try:
+                    for log in stream_llm_logs():
+                        # Add new log to history
+                        st.session_state.log_history.append(log)
+                        # Keep only last 100 logs
+                        if len(st.session_state.log_history) > 100:
+                            st.session_state.log_history.pop(0)
+                        
+                        # Display all logs in reverse order (newest first)
+                        log_placeholder.code('\n'.join(reversed(st.session_state.log_history)))
+                        
+                except Exception as e:
+                    st.error(f"Error streaming logs: {str(e)}")
+                    st.info("Make sure LM Studio server is running on http://localhost:1234")
 
 if __name__ == "__main__":
     main()

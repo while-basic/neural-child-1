@@ -13,8 +13,7 @@ from text_embed import get_embeddings
 from autonomous_learner import AutonomousLearner
 from sandbox_manager import SandboxManager
 import psutil
-import config
-from config import config
+from config import config  # Import config object directly
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

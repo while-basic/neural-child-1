@@ -6,7 +6,7 @@ from urllib3.util.retry import Retry
 import json
 from typing import Optional, Dict, Any
 from schemas import MotherResponse
-from config import CHAT_SERVER_URL, DEFAULT_RESPONSE, config, EMBEDDING_DIM, DEVICE
+from config import CHAT_SERVER_URL, DEFAULT_RESPONSE, config, DEVICE
 from utils import parse_llm_response
 import torch
 
@@ -133,7 +133,6 @@ def _get_default_response(structured: bool = False) -> Dict[str, Any]:
 
 class LLMModule:
     def __init__(self):
-        self.embedding_dim = EMBEDDING_DIM
         self.device = DEVICE
         # Initialize other necessary components
     

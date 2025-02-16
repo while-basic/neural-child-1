@@ -4,7 +4,7 @@ import json
 from typing import List, Dict, Any
 import torch
 import torch.nn.functional as F
-from config import DEFAULT_EMBEDDING, config, EMBEDDING_DIM
+from config import DEFAULT_EMBEDDING, config
 from local_embeddings import SimpleEmbeddingService, embedding_service
 
 def get_embeddings(text: str) -> List[Dict[str, Any]]:
@@ -20,11 +20,11 @@ def get_embeddings(text: str) -> List[Dict[str, Any]]:
         embedding_tensor = torch.tensor(embedding)
         
         # Ensure correct dimension
-        if embedding_tensor.size(0) != EMBEDDING_DIM:
-            if embedding_tensor.size(0) > EMBEDDING_DIM:
-                embedding_tensor = embedding_tensor[:EMBEDDING_DIM]
+        if embedding_tensor.size(0) != config.EMBEDDING_DIM:
+            if embedding_tensor.size(0) > config.EMBEDDING_DIM:
+                embedding_tensor = embedding_tensor[:config.EMBEDDING_DIM]
             else:
-                embedding_tensor = F.pad(embedding_tensor, (0, EMBEDDING_DIM - embedding_tensor.size(0)))
+                embedding_tensor = F.pad(embedding_tensor, (0, config.EMBEDDING_DIM - embedding_tensor.size(0)))
         
         # Convert back to list for return
         embedding = embedding_tensor.tolist()

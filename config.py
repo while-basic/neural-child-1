@@ -3,10 +3,14 @@ from dataclasses import dataclass
 from typing import List, Dict
 from developmental_stages import DevelopmentalStage
 
+@dataclass
 class Config:
+    EMBEDDING_DIM: int = 768  # Standard embedding dimension for most transformer models
+    HIDDEN_DIM: int = 512     # Hidden dimension for neural network layers
     # Add your configuration parameters here
     def __init__(self):
         self.embedding_dim = 768
+        self.hidden_dim = 512
         self.max_sequence_length = 512
         self.batch_size = 32
         self.learning_rate = 1e-4
@@ -20,8 +24,6 @@ EMBEDDING_SERVER_URL = "http://localhost:1234"  # Change as needed
 CHAT_SERVER_URL = "http://localhost:1234"       # Change as needed
 
 # Model Configuration
-EMBEDDING_DIM = 768
-HIDDEN_DIM = 512
 LEARNING_RATE = 1e-4
 
 # Training Configuration
@@ -47,7 +49,7 @@ DEFAULT_RESPONSE = {
 }
 
 # Default Embedding (zeros vector of EMBEDDING_DIM size)
-DEFAULT_EMBEDDING = [0.0] * EMBEDDING_DIM
+DEFAULT_EMBEDDING = [0.0] * config.EMBEDDING_DIM
 
 # Device Configuration
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

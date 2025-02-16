@@ -10,3 +10,5 @@ streamlit>=1.24.0
 plotly>=5.13.0
 psutil>=5.9.0
 docker>=6.1.2
+sseclient-py>=1.7.2
+requests>=2.31.0
