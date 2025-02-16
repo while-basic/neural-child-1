@@ -5,16 +5,32 @@ from developmental_stages import DevelopmentalStage
 
 @dataclass
 class Config:
-    EMBEDDING_DIM: int = 768  # Standard embedding dimension for most transformer models
-    HIDDEN_DIM: int = 512     # Hidden dimension for neural network layers
-    # Add your configuration parameters here
     def __init__(self):
-        self.embedding_dim = 768
-        self.hidden_dim = 512
+        # Model dimensions
+        self.embedding_dim = 768  # Standard embedding dimension for most transformer models
+        self.hidden_dim = 512     # Hidden dimension for neural network layers
         self.max_sequence_length = 512
         self.batch_size = 32
         self.learning_rate = 1e-4
-        # Add other configuration parameters as needed
+        
+        # Training settings
+        self.max_iterations = 1000
+        self.save_interval = 50
+        self.checkpoint_dir = "checkpoints"
+        self.log_dir = "logs"
+        
+        # Development settings
+        self.interactions_per_stage = 10
+        self.min_stage_success_rate = 0.4
+        self.stage_progression_threshold = 0.5
+        
+        # Memory settings
+        self.memory_capacity = 50000
+        self.replay_batch_size = 64
+        self.memory_consolidation_interval = 200
+        
+        # Device settings
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Create a global config instance
 config = Config()
@@ -27,20 +43,20 @@ CHAT_SERVER_URL = "http://localhost:1234"       # Change as needed
 LEARNING_RATE = 1e-4
 
 # Training Configuration
-MAX_ITERATIONS = 100
-SAVE_INTERVAL = 10
+MAX_ITERATIONS = 1000
+SAVE_INTERVAL = 50
 CHECKPOINT_DIR = "checkpoints"
 LOG_DIR = "logs"
 
 # Development Settings
-INTERACTIONS_PER_STAGE = 20  # Reduced from 100 to make progression faster
-MIN_STAGE_SUCCESS_RATE = 0.5  # Lowered from 0.7 to make progression easier
-STAGE_PROGRESSION_THRESHOLD = 0.6  # Lowered from 0.8 to make progression easier
+INTERACTIONS_PER_STAGE = 10
+MIN_STAGE_SUCCESS_RATE = 0.4
+STAGE_PROGRESSION_THRESHOLD = 0.5
 
 # Memory Configuration
-MEMORY_CAPACITY = 10000
-REPLAY_BATCH_SIZE = 32
-MEMORY_CONSOLIDATION_INTERVAL = 100
+MEMORY_CAPACITY = 50000
+REPLAY_BATCH_SIZE = 64
+MEMORY_CONSOLIDATION_INTERVAL = 200
 
 # Default Response
 DEFAULT_RESPONSE = {
@@ -48,8 +64,8 @@ DEFAULT_RESPONSE = {
     'emotional_vector': [0.5, 0.5, 0.5, 0.5]
 }
 
-# Default Embedding (zeros vector of EMBEDDING_DIM size)
-DEFAULT_EMBEDDING = [0.0] * config.EMBEDDING_DIM
+# Default Embedding (zeros vector of embedding_dim size)
+DEFAULT_EMBEDDING = [0.0] * config.embedding_dim
 
 # Device Configuration
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

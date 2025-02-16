@@ -15,6 +15,7 @@ import requests
 import sseclient
 import threading
 import queue
+import os
 
 try:
     from main import DigitalChild, MotherLLM
@@ -384,23 +385,25 @@ def format_detailed_age(birth_time):
     now = datetime.now()
     delta = now - birth_time
     
-    weeks = delta.days // 7
-    remaining_days = delta.days % 7
-    hours = delta.seconds // 3600
-    minutes = (delta.seconds % 3600) // 60
-    seconds = delta.seconds % 60
+    total_seconds = delta.total_seconds()
+    
+    # Calculate all time units
+    weeks = int(total_seconds // (7 * 24 * 3600))
+    days = int((total_seconds % (7 * 24 * 3600)) // (24 * 3600))
+    hours = int((total_seconds % (24 * 3600)) // 3600)
+    minutes = int((total_seconds % 3600) // 60)
+    seconds = int(total_seconds % 60)
     
     parts = []
     if weeks > 0:
         parts.append(f"{weeks}w")
-    if remaining_days > 0:
-        parts.append(f"{remaining_days}d")
-    if hours > 0:
+    if days > 0 or weeks > 0:
+        parts.append(f"{days}d")
+    if hours > 0 or days > 0 or weeks > 0:
         parts.append(f"{hours}h")
-    if minutes > 0:
+    if minutes > 0 or hours > 0 or days > 0 or weeks > 0:
         parts.append(f"{minutes}m")
-    if seconds > 0 or not parts:
-        parts.append(f"{seconds}s")
+    parts.append(f"{seconds}s")  # Always show seconds
     
     return " ".join(parts)
 
@@ -934,6 +937,9 @@ def main():
     with save_load_cols[0]:
         if st.button("Save State", use_container_width=True):
             try:
+                # Create a timestamp for the filename
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                
                 # Convert datetime objects to ISO format strings for saving
                 conversation_history = [
                     {**item, 'timestamp': item['timestamp'].isoformat()}
@@ -947,19 +953,33 @@ def main():
                 
                 # Save both child and session state
                 save_data = {
-                    'child_state': st.session_state.child.brain.state_dict(),
+                    'child_state_dict': st.session_state.child.brain.state_dict(),
+                    'emotional_state': st.session_state.child.emotional_state.cpu().numpy().tolist(),
+                    'birth_date': st.session_state.birth_time.isoformat(),
                     'conversation_history': conversation_history,
-                    'emotional_history': st.session_state.emotional_history,
+                    'emotional_history': [e.tolist() if isinstance(e, torch.Tensor) else e for e in st.session_state.emotional_history],
                     'learning_history': st.session_state.learning_history,
                     'milestone_history': st.session_state.milestone_history,
                     'complexity_history': st.session_state.complexity_history,
                     'teaching_history': teaching_history,
-                    'development_metrics': st.session_state.development_metrics
+                    'development_metrics': st.session_state.development_metrics,
+                    'current_stage': st.session_state.child.curriculum.current_stage.name
                 }
                 
-                save_path = f"digital_child_{st.session_state.child.age()}mo_full.pth"
+                # Create save directory if it doesn't exist
+                save_dir = "checkpoints"
+                if not os.path.exists(save_dir):
+                    os.makedirs(save_dir)
+                
+                save_path = os.path.join(save_dir, f"digital_child_state_{timestamp}.pth")
                 torch.save(save_data, save_path)
                 st.success(f"Full state saved to {save_path}")
+                
+                # Save a backup copy
+                backup_path = os.path.join(save_dir, "digital_child_state_latest.pth")
+                torch.save(save_data, backup_path)
+                st.info("Backup saved as 'digital_child_state_latest.pth'")
+                
             except Exception as e:
                 st.error(f"Error saving state: {str(e)}")
                 if st.sidebar.checkbox("Debug Mode", value=False):
@@ -980,7 +1000,16 @@ def main():
                 )
                 
                 # Load child state
-                st.session_state.child.brain.load_state_dict(save_data['child_state'])
+                st.session_state.child.brain.load_state_dict(save_data['child_state_dict'])
+                
+                # Restore emotional state
+                st.session_state.child.emotional_state = torch.tensor(
+                    save_data['emotional_state'],
+                    device=st.session_state.child.device
+                )
+                
+                # Restore birth time
+                st.session_state.birth_time = datetime.fromisoformat(save_data['birth_date'])
                 
                 # Load session state with datetime conversion
                 st.session_state.conversation_history = [
@@ -988,7 +1017,14 @@ def main():
                      if isinstance(item['timestamp'], str) else item['timestamp']}
                     for item in save_data['conversation_history']
                 ]
-                st.session_state.emotional_history = save_data['emotional_history']
+                
+                # Convert emotional history tensors
+                st.session_state.emotional_history = [
+                    torch.tensor(e, device=st.session_state.child.device) 
+                    if isinstance(e, list) else e 
+                    for e in save_data['emotional_history']
+                ]
+                
                 st.session_state.learning_history = save_data['learning_history']
                 st.session_state.milestone_history = save_data['milestone_history']
                 st.session_state.complexity_history = save_data['complexity_history']
@@ -1001,9 +1037,17 @@ def main():
                 ]
                 
                 st.session_state.development_metrics = save_data['development_metrics']
+                
+                # Restore current stage
+                if 'current_stage' in save_data:
+                    st.session_state.child.curriculum.current_stage = DevelopmentalStage[save_data['current_stage']]
+                
                 st.success("Full state loaded successfully!")
+                st.info("Please refresh the page to see all restored state.")
             except Exception as e:
                 st.error(f"Error loading state: {str(e)}")
+                if st.sidebar.checkbox("Debug Mode", value=False):
+                    st.exception(e)
                 st.info("If you trust this file, try restarting the application and loading again.")
     
     with save_load_cols[2]:

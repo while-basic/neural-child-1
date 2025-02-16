@@ -142,6 +142,21 @@ Key configurations in `config.py`:
 - Stage transition validation
 - Emotional state verification
 
+## Development Notes
+
+### Accelerated Development Configuration
+The system is configured for rapid development with the following settings:
+- Only 10 interactions required per developmental stage (reduced from default 500)
+- Lowered progression thresholds:
+  - Minimum stage success rate: 0.4
+  - Stage progression threshold: 0.5
+  - Performance threshold for advancement: 0.6
+- No time-based restrictions between stage transitions
+
+These settings allow for faster progression through developmental stages while maintaining basic developmental checks. This is useful for testing and rapid iteration, but may not reflect realistic human development timeframes.
+
+**Note**: These settings can be adjusted in `config.py` if slower, more realistic development is desired.
+
 ## Contributing
 
 Guidelines for contributing to the project:

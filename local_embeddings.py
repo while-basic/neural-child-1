@@ -2,11 +2,11 @@ import torch
 import torch.nn as nn
 import numpy as np
 from typing import List
-import config
+from config import config
 
 class SimpleEmbeddingService:
     def __init__(self, vocab_size=30000, embedding_dim=768):
-        self.device = config.DEVICE
+        self.device = config.device
         self.embedding_dim = embedding_dim
         self.vocab_size = vocab_size
         
@@ -33,10 +33,10 @@ class SimpleEmbeddingService:
             # Mean pooling
             pooled = torch.mean(embeddings, dim=0)
             # Ensure output dimension matches config
-            if pooled.shape[0] != config.EMBEDDING_DIM:
+            if pooled.shape[0] != self.embedding_dim:
                 pooled = nn.functional.interpolate(
                     pooled.unsqueeze(0).unsqueeze(0),
-                    size=config.EMBEDDING_DIM,
+                    size=self.embedding_dim,
                     mode='linear'
                 ).squeeze()
             return pooled.cpu().numpy().tolist()

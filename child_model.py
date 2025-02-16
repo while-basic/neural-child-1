@@ -7,7 +7,7 @@ from theory_of_mind import TheoryOfMind
 
 class CustomTransformerEncoderLayer(nn.TransformerEncoderLayer):
     def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0.1):
-        super().__init__(d_model, nhead, dim_feedforward, dropout)
+        super().__init__(d_model, nhead, dim_feedforward, dropout, batch_first=True)
         self.stored_attention_weights = None
 
     def _sa_block(self, x, attn_mask, key_padding_mask, is_causal=False):
@@ -39,15 +39,15 @@ class DynamicNeuralChild(nn.Module):
         
         # Core neural components
         self.encoder = nn.Sequential(
-            nn.Linear(config.EMBEDDING_DIM, config.HIDDEN_DIM),
-            nn.LayerNorm(config.HIDDEN_DIM),
+            nn.Linear(config.embedding_dim, config.hidden_dim),
+            nn.LayerNorm(config.hidden_dim),
             nn.ReLU(),
             nn.Dropout(0.1)
         ).to(device)
         
-        # Create custom transformer encoder layer and encoder
+        # Create custom transformer encoder layer and encoder with batch_first=True
         encoder_layer = CustomTransformerEncoderLayer(
-            d_model=config.HIDDEN_DIM,
+            d_model=config.hidden_dim,
             nhead=8,
             dim_feedforward=2048,
             dropout=0.1
@@ -55,20 +55,20 @@ class DynamicNeuralChild(nn.Module):
         self.processor = CustomTransformerEncoder(encoder_layer, num_layers=4).to(device)
         
         self.decoder = nn.Sequential(
-            nn.Linear(config.HIDDEN_DIM, config.HIDDEN_DIM // 2),
-            nn.LayerNorm(config.HIDDEN_DIM // 2),
+            nn.Linear(config.hidden_dim, config.hidden_dim // 2),
+            nn.LayerNorm(config.hidden_dim // 2),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Linear(config.HIDDEN_DIM // 2, config.EMBEDDING_DIM)
+            nn.Linear(config.hidden_dim // 2, config.embedding_dim)
         ).to(device)
         
         # Psychological systems
-        self.attachment = AttachmentSystem(config.HIDDEN_DIM).to(device)
+        self.attachment = AttachmentSystem(config.hidden_dim).to(device)
         self.defense_mechanisms = DefenseMechanisms().to(device)
-        self.theory_of_mind = TheoryOfMind(config.HIDDEN_DIM).to(device)
+        self.theory_of_mind = TheoryOfMind(config.hidden_dim).to(device)
         
         # State tracking
-        self.internal_state = torch.zeros(1, config.HIDDEN_DIM, device=device)
+        self.internal_state = torch.zeros(1, config.hidden_dim, device=device)
         self.attention_weights = None
         
     def forward(self, x):

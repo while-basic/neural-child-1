@@ -633,7 +633,7 @@ class DevelopmentalSystem:
                 self.regression_count = 0
                 return f"Regression detected: Moved back to {previous_stage.name}"
             return "Warning: Potential regression detected"
-        if performance > 0.85 and (datetime.now() - self.last_transition).days >= 30:
+        if performance > 0.6:  # Lowered from 0.85
             if self.current_stage.value < len(DevelopmentalStage) - 1:
                 self.current_stage = DevelopmentalStage(self.current_stage.value + 1)
                 self.last_transition = datetime.now()

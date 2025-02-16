@@ -339,7 +339,7 @@ class DigitalChild:
         try:
             embeddings = get_embeddings(stimulus['text'])
             if not embeddings:  # If empty list returned
-                return torch.zeros(1, config.EMBEDDING_DIM, device=self.device)
+                return torch.zeros(1, config.embedding_dim, device=self.device)
                 
             # Get the embedding and convert to tensor
             embedding = torch.tensor(embeddings[0]['embedding'], device=self.device)  # [embedding_dim]
@@ -348,11 +348,11 @@ class DigitalChild:
             embedding = embedding.unsqueeze(0)  # [1, embedding_dim]
             
             # Ensure correct dimension
-            if embedding.size(1) != config.EMBEDDING_DIM:
-                if embedding.size(1) > config.EMBEDDING_DIM:
-                    embedding = embedding[:, :config.EMBEDDING_DIM]
+            if embedding.size(1) != config.embedding_dim:
+                if embedding.size(1) > config.embedding_dim:
+                    embedding = embedding[:, :config.embedding_dim]
                 else:
-                    padding = torch.zeros(1, config.EMBEDDING_DIM - embedding.size(1), device=self.device)
+                    padding = torch.zeros(1, config.embedding_dim - embedding.size(1), device=self.device)
                     embedding = torch.cat([embedding, padding], dim=1)
             
             return embedding  # [1, embedding_dim]
@@ -360,7 +360,7 @@ class DigitalChild:
         except (IndexError, KeyError, Exception) as e:
             print(f"Error in perceive: {e}")
             # Return default embedding vector
-            return torch.zeros(1, config.EMBEDDING_DIM, device=self.device)
+            return torch.zeros(1, config.embedding_dim, device=self.device)
     
     def respond(self, perception):
         with torch.amp.autocast(self.device.type):
@@ -385,25 +385,61 @@ class DigitalChild:
             container_id = self.sandbox.create_sandbox()
             print(f"Started autonomous learning in sandbox {container_id}")
             
+            last_save_time = time.time()
+            last_progress_time = time.time()
+            SAVE_INTERVAL = 300  # Save every 5 minutes
+            PROGRESS_TIMEOUT = 600  # Consider stuck if no progress for 10 minutes
+            
             while True:
-                # Self-directed learning cycle
-                learning_results = self.autonomous_learner.learn_independently()
-                
-                # Monitor resource usage
-                resources = self.sandbox.monitor_resources()
-                
-                # Save progress periodically
-                if len(self.memory.experiences) % 100 == 0:
-                    self.sandbox.save_state(f"autonomous_checkpoint_{self.age()}mo.pth")
-                
-                # Print status
-                print(f"\rAge: {self.age()}mo | Performance: {learning_results['performance']:.2f} | "
-                      f"Memory Usage: {resources.get('memory_usage', 0) / 1024 / 1024:.1f}MB", end='')
+                try:
+                    # Self-directed learning cycle
+                    learning_results = self.autonomous_learner.learn_independently()
+                    
+                    # Monitor resource usage
+                    resources = self.sandbox.monitor_resources()
+                    
+                    # Check for progress
+                    current_time = time.time()
+                    if learning_results['performance'] > 0.1:  # If there's any meaningful progress
+                        last_progress_time = current_time
+                    elif current_time - last_progress_time > PROGRESS_TIMEOUT:
+                        print("\nNo progress detected for 10 minutes. Restarting learning cycle...")
+                        self.autonomous_learner.reset_learning_parameters()
+                        last_progress_time = current_time
+                        continue
+                    
+                    # Save progress periodically
+                    if current_time - last_save_time > SAVE_INTERVAL:
+                        self.sandbox.save_state(f"autonomous_checkpoint_{self.age()}mo.pth")
+                        last_save_time = current_time
+                    
+                    # Print status with memory usage
+                    memory_mb = resources.get('memory_usage', 0) / 1024 / 1024
+                    print(f"\rAge: {self.age()}mo | Performance: {learning_results['performance']:.2f} | "
+                          f"Memory Usage: {memory_mb:.1f}MB | "
+                          f"Last Progress: {int(current_time - last_progress_time)}s ago", end='')
+                    
+                    # Brief sleep to prevent CPU overload
+                    time.sleep(0.1)
+                    
+                except Exception as e:
+                    print(f"\nError in learning cycle: {str(e)}")
+                    print("Attempting to recover...")
+                    time.sleep(5)  # Wait before retrying
+                    continue
                 
         except KeyboardInterrupt:
             print("\nGracefully shutting down autonomous learning...")
+        except Exception as e:
+            print(f"\nCritical error in autonomous mode: {str(e)}")
         finally:
-            self.sandbox.cleanup()
+            try:
+                print("\nSaving final state...")
+                self.sandbox.save_state(f"autonomous_final_{self.age()}mo.pth")
+                self.sandbox.cleanup()
+                print("Autonomous mode shutdown complete.")
+            except Exception as cleanup_error:
+                print(f"Error during cleanup: {str(cleanup_error)}")
 
 def main():
     child = DigitalChild()
@@ -415,9 +451,9 @@ def main():
     }
     
     # Stage progression control
-    interactions_per_stage = 100
+    interactions_per_stage = config.interactions_per_stage
     total_stages_completed = 0
-    max_stages = len(DevelopmentalStage) - 1  # Total number of stages
+    max_stages = len(DevelopmentalStage) - 1
     stage_metrics = {
         'success_rate': 0.0,
         'abstraction': 0.0,
@@ -433,9 +469,16 @@ def main():
         child.autonomous_mode()
     else:
         try:
+            start_time = time.time()
+            last_save_time = start_time
+            
             while total_stages_completed < max_stages:
                 current_stage = child.curriculum.current_stage
                 current_stage_interactions = 0
+                stage_start_time = time.time()
+                
+                print(f"\nStarting {current_stage.name} stage...")
+                print(f"Required interactions: {interactions_per_stage}")
                 
                 # Complete required interactions for current stage
                 while current_stage_interactions < interactions_per_stage:
@@ -465,39 +508,55 @@ def main():
                             'reward': feedback.get('reward_score', 0.5)
                         })
                         
-                        # Update counters
+                        # Update counters and show progress
                         current_stage_interactions += 1
+                        elapsed_time = time.time() - stage_start_time
+                        progress = (current_stage_interactions / interactions_per_stage) * 100
                         
-                        # Average metrics for stage progression
-                        if current_stage_interactions >= interactions_per_stage:
-                            # Calculate averages
-                            for key in stage_metrics:
-                                stage_metrics[key] /= interactions_per_stage
-                            
-                            # Update stage
-                            old_stage = current_stage
-                            child.curriculum.update_stage(stage_metrics)
-                            
-                            # Check if stage changed
-                            if child.curriculum.current_stage != old_stage:
-                                print(f"\nProgressing from {old_stage.name} to {child.curriculum.current_stage.name}")
-                                total_stages_completed += 1
-                                # Reset metrics for next stage
-                                for key in stage_metrics:
-                                    stage_metrics[key] = 0.0
-                                break
+                        # Print progress every 10 interactions
+                        if current_stage_interactions % 10 == 0:
+                            print(f"\rStage: {current_stage.name:<15} | "
+                                  f"Progress: {progress:>5.1f}% | "
+                                  f"Interactions: {current_stage_interactions:>4}/{interactions_per_stage} | "
+                                  f"Time: {elapsed_time:>6.1f}s | "
+                                  f"Success Rate: {stage_metrics['success_rate']/current_stage_interactions:>4.2f}", end='')
                         
-                        # Print progress
-                        print(f"\rStage: {current_stage.name} | Progress: {current_stage_interactions}/{interactions_per_stage} | Completed Stages: {total_stages_completed}/{max_stages}", end='')
+                        # Save state periodically
+                        if time.time() - last_save_time > config.save_interval:
+                            print(f"\nSaving checkpoint at {current_stage_interactions} interactions...")
+                            torch.save(child.brain.state_dict(), f"digital_child_{child.age()}mo.pth")
+                            last_save_time = time.time()
                         
                         # Memory management
-                        if current_stage_interactions % 10 == 0:
+                        if current_stage_interactions % config.memory_consolidation_interval == 0:
                             child.memory.replay_consolidation()
                             
                     except Exception as e:
                         print(f"\nError in interaction: {e}")
                         time.sleep(1)
                         continue
+                
+                # Calculate final stage metrics
+                for key in stage_metrics:
+                    stage_metrics[key] /= interactions_per_stage
+                
+                print(f"\n\nCompleted {current_stage.name} stage:")
+                print(f"Final metrics - Success: {stage_metrics['success_rate']:.2f}, "
+                      f"Abstraction: {stage_metrics['abstraction']:.2f}, "
+                      f"Self-awareness: {stage_metrics['self_awareness']:.2f}")
+                
+                # Update stage
+                old_stage = current_stage
+                child.curriculum.update_stage(stage_metrics)
+                
+                if child.curriculum.current_stage != old_stage:
+                    print(f"Progressing from {old_stage.name} to {child.curriculum.current_stage.name}")
+                    total_stages_completed += 1
+                    # Reset metrics for next stage
+                    for key in stage_metrics:
+                        stage_metrics[key] = 0.0
+                else:
+                    print(f"Remaining in {current_stage.name} stage for more development")
                 
                 # Force stage progression if stuck
                 if child.curriculum.current_stage == current_stage:
@@ -509,6 +568,8 @@ def main():
         except KeyboardInterrupt:
             print(f"\nMother: Goodnight my dear child. (Age: {child.age()} months)")
         finally:
+            total_time = time.time() - start_time
+            print(f"\nTotal training time: {total_time/3600:.1f} hours")
             print("\nSaving final state...")
             torch.save(child.brain.state_dict(), f"digital_child_{child.age()}mo.pth")
             print("Save complete.")

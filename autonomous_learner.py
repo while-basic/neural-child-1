@@ -45,6 +45,15 @@ class AutonomousLearner:
         elif performance > 0.7:
             self.exploration_rate = min(0.5, self.exploration_rate * 1.1)
 
+    def reset_learning_parameters(self):
+        """Reset learning parameters to default values to recover from stuck states"""
+        self.exploration_rate = 0.3
+        self.curiosity_threshold = 0.7
+        # Clear recent learning history to avoid being stuck in a bad pattern
+        if len(self.learning_history) > 0:
+            self.learning_history = self.learning_history[:-10]  # Keep all but last 10 entries
+        print("Reset learning parameters to default values")
+
     def learn_independently(self) -> dict:
         """Execute one cycle of autonomous learning"""
         prompt = self.generate_self_prompt()

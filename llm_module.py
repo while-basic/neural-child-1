@@ -9,6 +9,10 @@ from schemas import MotherResponse
 from config import CHAT_SERVER_URL, DEFAULT_RESPONSE, config, DEVICE
 from utils import parse_llm_response
 import torch
+from openai import OpenAI
+
+# Initialize OpenAI client for LM Studio
+client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
 
 def create_retry_session(
     retries: int = 3,
@@ -32,87 +36,77 @@ def create_retry_session(
 def chat_completion(
     system_prompt: str,
     user_prompt: str,
-    model: str = "qwen2.5-7b-instruct",
+    model: str = "unsloth/DeepSeek-R1-Distill-Llama-8B-GGUF",  # Updated default model
     temperature: float = 0.7,
     max_tokens: int = -1,
-    stream: bool = True,
-    server_url: str = "http://localhost:1234/v1/chat/completions", # Through LM studio with a local LLM like in this case: Qwen2.5-7b-instruct
+    stream: bool = False,  # Changed default to False since we're using structured output
+    server_url: str = "http://localhost:1234/v1/chat/completions",
     structured_output: bool = False
 ) -> Optional[Dict[str, Any]]:
     """
-    Enhanced chat completion with retry logic and better error handling
+    Enhanced chat completion using OpenAI client with LM Studio
     """
     # Generate JSON schema if structured output requested
-    response_schema = None
     if structured_output:
-        response_schema = {
-            "name": MotherResponse.__name__,
-            "strict": True,
-            "schema": MotherResponse.model_json_schema()
-        }
-        stream = False  # Force disable streaming
-
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "stream": stream
-    }
-
-    if response_schema:
-        payload["response_format"] = {
-            "type": "json_schema",
-            "json_schema": response_schema
-        }
-
-    headers = {"Content-Type": "application/json"}
+        # Add example format to the system prompt
+        system_prompt += "\nRespond in valid JSON format like this example:\n"
+        system_prompt += """
+{
+    "content": "That's wonderful! [HUG]",
+    "emotional_context": {
+        "joy": 0.8,
+        "trust": 0.7,
+        "fear": 0.1,
+        "surprise": 0.2
+    },
+    "reward_score": 0.7,
+    "success_metric": 0.6,
+    "complexity_rating": 0.3,
+    "self_critique_score": 0.5,
+    "cognitive_labels": ["positive_reinforcement", "emotional_support"]
+}"""
 
     try:
-        session = create_retry_session()
-        response = session.post(
-            f"{CHAT_SERVER_URL}/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=(30, 90)  # (connect timeout, read timeout)
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            temperature=temperature,
+            stream=stream
         )
-        response.raise_for_status()
-        data = response.json()
         
-        if not data or "choices" not in data:
-            print("Invalid response format from LLM server")
-            return DEFAULT_RESPONSE
-            
-        raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        raw_content = completion.choices[0].message.content
         
         if not raw_content:
             print("Empty response from LLM server")
             return DEFAULT_RESPONSE
         
-        if response_schema:
+        if structured_output:
             try:
-                return MotherResponse(**json.loads(raw_content)).dict()
+                # Try to clean up the response if it contains extra text
+                raw_content = raw_content.strip()
+                # Find the first { and last }
+                start = raw_content.find('{')
+                end = raw_content.rfind('}') + 1
+                if start >= 0 and end > start:
+                    raw_content = raw_content[start:end]
+                
+                # Parse the JSON and validate against schema
+                parsed_json = json.loads(raw_content)
+                return MotherResponse(**parsed_json).dict()
             except (json.JSONDecodeError, ValueError) as e:
                 print(f"Failed to parse structured LLM response: {e}")
+                print(f"Raw content was: {raw_content}")
                 return DEFAULT_RESPONSE
-        return parse_llm_response(data)
+        
+        # For non-structured output, just return the parsed response
+        return {'text': raw_content}
 
-    except requests.exceptions.Timeout:
-        print("Request timed out. Server might be overloaded.")
-        return DEFAULT_RESPONSE
-    except requests.exceptions.ConnectionError:
-        print("Connection error. Server might be down.")
-        return DEFAULT_RESPONSE
-    except requests.exceptions.RequestException as e:
-        print(f"Request error: {e}")
-        return DEFAULT_RESPONSE
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"Error in chat completion: {str(e)}")
         return DEFAULT_RESPONSE
-    return None
 
 def _get_default_response(structured: bool = False) -> Dict[str, Any]:
     """Get default response in case of errors."""
