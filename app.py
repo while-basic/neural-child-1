@@ -16,6 +16,118 @@ import threading
 import queue
 import os
 
+# Define stage templates for interactions
+stage_templates = {
+    DevelopmentalStage.NEWBORN: [
+        "[FEED] Feed the baby",
+        "[COMFORT] Comfort the crying baby",
+        "[SLEEP] Help the baby sleep",
+        "[TALK] Talk softly to the baby"
+    ],
+    DevelopmentalStage.EARLY_INFANCY: [
+        "[PLAY] Play peek-a-boo",
+        "[SMILE] Smile at the baby",
+        "[SING] Sing a lullaby",
+        "[TOUCH] Gentle touch and massage"
+    ],
+    DevelopmentalStage.LATE_INFANCY: [
+        "[CRAWL] Encourage crawling",
+        "[EXPLORE] Help explore objects",
+        "[BABBLE] Respond to babbling",
+        "[REACH] Help reach for toys"
+    ],
+    DevelopmentalStage.EARLY_TODDLER: [
+        "[WALK] Support walking practice",
+        "[WORDS] Teach simple words",
+        "[POINT] Point to objects",
+        "[STACK] Stack blocks together"
+    ],
+    DevelopmentalStage.LATE_TODDLER: [
+        "[SHARE] Practice sharing",
+        "[DRAW] Draw together",
+        "[DANCE] Dance and move",
+        "[COUNT] Count objects"
+    ],
+    DevelopmentalStage.EARLY_PRESCHOOL: [
+        "[READ] Read a story",
+        "[COLORS] Learn colors",
+        "[SHAPES] Identify shapes",
+        "[PRETEND] Pretend play"
+    ],
+    DevelopmentalStage.LATE_PRESCHOOL: [
+        "[WRITE] Practice writing",
+        "[PUZZLE] Solve puzzles",
+        "[FRIENDS] Make friends",
+        "[CREATE] Creative activities"
+    ],
+    DevelopmentalStage.EARLY_CHILDHOOD: [
+        "[LEARN] Basic math concepts",
+        "[WRITE] Write simple words",
+        "[SCIENCE] Simple experiments",
+        "[SOCIAL] Group activities"
+    ],
+    DevelopmentalStage.MIDDLE_CHILDHOOD: [
+        "[HOMEWORK] Help with homework",
+        "[SPORTS] Physical activities",
+        "[MUSIC] Music lessons",
+        "[PROJECT] School projects"
+    ],
+    DevelopmentalStage.LATE_CHILDHOOD: [
+        "[RESEARCH] Research topics",
+        "[DEBATE] Practice debating",
+        "[GOALS] Set personal goals",
+        "[SKILLS] Learn new skills"
+    ],
+    DevelopmentalStage.EARLY_ELEMENTARY: [
+        "[STUDY] Study techniques",
+        "[ORGANIZE] Organization skills",
+        "[PRESENT] Presentation skills",
+        "[TEAM] Team projects"
+    ],
+    DevelopmentalStage.MIDDLE_ELEMENTARY: [
+        "[ANALYZE] Critical thinking",
+        "[EXPERIMENT] Scientific method",
+        "[WRITE] Essay writing",
+        "[LEAD] Leadership activities"
+    ],
+    DevelopmentalStage.LATE_ELEMENTARY: [
+        "[RESEARCH] Independent research",
+        "[CRITIQUE] Critical analysis",
+        "[DEBATE] Advanced debates",
+        "[CREATE] Creative projects"
+    ],
+    DevelopmentalStage.EARLY_ADOLESCENCE: [
+        "[IDENTITY] Self-discovery",
+        "[FUTURE] Career exploration",
+        "[ETHICS] Moral discussions",
+        "[SOCIAL] Social skills"
+    ],
+    DevelopmentalStage.MIDDLE_ADOLESCENCE: [
+        "[PLAN] Life planning",
+        "[VALUES] Personal values",
+        "[CAREER] Career guidance",
+        "[RESPONSIBILITY] Taking responsibility"
+    ],
+    DevelopmentalStage.LATE_ADOLESCENCE: [
+        "[DECIDE] Decision making",
+        "[PREPARE] College preparation",
+        "[INDEPENDENCE] Independent living",
+        "[GOALS] Long-term goals"
+    ],
+    DevelopmentalStage.YOUNG_ADULT: [
+        "[CAREER] Career development",
+        "[FINANCE] Financial planning",
+        "[RELATIONSHIP] Relationship advice",
+        "[LIFE] Life skills"
+    ],
+    DevelopmentalStage.MATURE_ADULT: [
+        "[WISDOM] Share wisdom",
+        "[MENTOR] Mentorship",
+        "[LEGACY] Build legacy",
+        "[REFLECT] Life reflection"
+    ]
+}
+
 try:
     from main import DigitalChild, MotherLLM
 except ImportError:
@@ -414,28 +526,6 @@ def format_json_response(response_data):
     except Exception:
         return str(response_data)
 
-def format_detailed_age(birth_time):
-    """Format age with detailed breakdown and time acceleration"""
-    now = datetime.now()
-    delta = now - birth_time
-    
-    # Apply time acceleration: 1 real minute = 1 baby hour
-    accelerated_seconds = delta.total_seconds() * 60  # Convert minutes to hours
-    
-    # Calculate all time units
-    months = int(accelerated_seconds // (30 * 24 * 3600))  # Approximate months
-    days = int((accelerated_seconds % (30 * 24 * 3600)) // (24 * 3600))
-    hours = int((accelerated_seconds % (24 * 3600)) // 3600)
-    
-    parts = []
-    if months > 0:
-        parts.append(f"{months}mo")
-    if days > 0 or months > 0:
-        parts.append(f"{days}d")
-    parts.append(f"{hours}h")
-    
-    return " ".join(parts)
-
 def stream_llm_logs():
     """Stream logs from LM Studio server"""
     try:
@@ -452,35 +542,202 @@ def add_time_controls():
     st.sidebar.markdown("---")
     st.sidebar.subheader("⏰ Time Controls")
     
+    # Add speed multiplier slider
+    if 'speed_multiplier' not in st.session_state:
+        st.session_state.speed_multiplier = 1.0
+    
+    st.session_state.speed_multiplier = st.sidebar.slider(
+        "Development Speed Multiplier",
+        min_value=1.0,
+        max_value=100.0,
+        value=st.session_state.speed_multiplier,
+        step=1.0,
+        help="Increase to speed up development (1x = normal, 100x = very fast)"
+    )
+    
     # Display current accelerated age
     age = format_detailed_age(st.session_state.birth_time)
     st.sidebar.markdown(f"**Accelerated Age:** {age}")
     
-    # Display time acceleration info
-    st.sidebar.markdown("""
-    **Time Acceleration:**
-    - 1 real minute = 1 baby hour
-    - 1 real hour = 60 baby hours
-    - 1 real day = 60 baby days
+    # Display time acceleration info with current multiplier
+    st.sidebar.markdown(f"""
+    **Time Acceleration ({st.session_state.speed_multiplier}x):**
+    - 1 real minute = {int(st.session_state.speed_multiplier)} baby hours
+    - 1 real hour = {int(st.session_state.speed_multiplier * 60)} baby hours
+    - 1 real day = {int(st.session_state.speed_multiplier * 60 * 24)} baby hours
     """)
     
     # Add development speed indicator
     dev_speed = calculate_development_speed()
     st.sidebar.markdown(f"**Development Speed:** {dev_speed:.1f}x normal")
 
+def format_detailed_age(birth_time):
+    """Format age with detailed breakdown and time acceleration"""
+    now = datetime.now()
+    delta = now - birth_time
+    
+    # Apply time acceleration with speed multiplier
+    multiplier = getattr(st.session_state, 'speed_multiplier', 1.0)
+    accelerated_seconds = delta.total_seconds() * 60 * multiplier  # Convert minutes to hours with multiplier
+    
+    # Calculate all time units
+    months = int(accelerated_seconds // (30 * 24 * 3600))  # Approximate months
+    days = int((accelerated_seconds % (30 * 24 * 3600)) // (24 * 3600))
+    hours = int((accelerated_seconds % (24 * 3600)) // 3600)
+    
+    parts = []
+    if months > 0:
+        parts.append(f"{months}mo")
+    if days > 0 or months > 0:
+        parts.append(f"{days}d")
+    parts.append(f"{hours}h")
+    
+    return " ".join(parts)
+
 def calculate_development_speed():
     """Calculate current development speed multiplier"""
     if not st.session_state.learning_history:
         return 1.0
     
-    # Calculate learning rate based on recent history
+    # Calculate learning rate based on recent history with speed multiplier
     recent_count = len(st.session_state.learning_history[-10:])
     time_window = (datetime.now() - st.session_state.birth_time).total_seconds() / 60  # in accelerated hours
+    multiplier = getattr(st.session_state, 'speed_multiplier', 1.0)
     
     if time_window == 0:
-        return 1.0
+        return multiplier
         
-    return (recent_count / time_window) * 10  # Scale for display
+    return (recent_count / time_window) * 10 * multiplier  # Scale for display with multiplier
+
+def calculate_sentience_level():
+    """Calculate current sentience level based on multiple deterministic factors"""
+    if not st.session_state.get('initialized', False):
+        return 0.0
+        
+    child = st.session_state.child
+    
+    # Calculate emotional complexity (0-1)
+    emotional_state = child.emotional_state.cpu().numpy()
+    emotional_complexity = np.std(emotional_state)  # Higher variance = more complex emotions
+    
+    # Calculate self-awareness (0-1)
+    if st.session_state.development_metrics['self_awareness']:
+        self_awareness = np.mean(st.session_state.development_metrics['self_awareness'][-10:])
+    else:
+        self_awareness = 0.0
+    
+    # Calculate decision autonomy (0-1)
+    if hasattr(child, 'decision_history') and child.decision_history:
+        recent_decisions = child.decision_history[-20:]
+        decision_autonomy = len(set(recent_decisions)) / len(recent_decisions)  # Measure of decision variety
+    else:
+        decision_autonomy = 0.0
+    
+    # Calculate learning adaptability (0-1)
+    learning_progress = len(st.session_state.learning_history)
+    learning_adaptability = min(1.0, learning_progress / 100)
+    
+    # Calculate cognitive complexity (0-1)
+    cognitive_complexity = calculate_complexity_level() / 100
+    
+    # Calculate emotional stability (0-1)
+    emotional_stability = calculate_emotional_stability() / 100
+    
+    # Weighted combination of factors
+    sentience_level = (
+        emotional_complexity * 0.2 +
+        self_awareness * 0.25 +
+        decision_autonomy * 0.15 +
+        learning_adaptability * 0.15 +
+        cognitive_complexity * 0.15 +
+        emotional_stability * 0.1
+    ) * 100  # Scale to 0-100
+    
+    # Store sentience history if not exists
+    if 'sentience_history' not in st.session_state:
+        st.session_state.sentience_history = []
+    
+    # Add current level to history
+    st.session_state.sentience_history.append({
+        'timestamp': datetime.now(),
+        'level': sentience_level,
+        'factors': {
+            'emotional_complexity': emotional_complexity,
+            'self_awareness': self_awareness,
+            'decision_autonomy': decision_autonomy,
+            'learning_adaptability': learning_adaptability,
+            'cognitive_complexity': cognitive_complexity,
+            'emotional_stability': emotional_stability
+        }
+    })
+    
+    # Keep only last 100 measurements
+    if len(st.session_state.sentience_history) > 100:
+        st.session_state.sentience_history.pop(0)
+    
+    return sentience_level
+
+def render_sentience_metrics():
+    """Display detailed sentience metrics"""
+    st.subheader("🧠 Sentience Analysis")
+    
+    # Calculate current sentience level
+    sentience_level = calculate_sentience_level()
+    
+    # Create gauge chart for overall sentience
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=sentience_level,
+        title={'text': "Sentience Level"},
+        gauge={
+            'axis': {'range': [0, 100]},
+            'bar': {'color': "rgba(50, 150, 250, 0.8)"},
+            'steps': [
+                {'range': [0, 20], 'color': "lightgray", 'name': "Basic Responses"},
+                {'range': [20, 40], 'color': "lightblue", 'name': "Emotional Awareness"},
+                {'range': [40, 60], 'color': "skyblue", 'name': "Self Recognition"},
+                {'range': [60, 80], 'color': "royalblue", 'name': "Complex Reasoning"},
+                {'range': [80, 100], 'color': "darkblue", 'name': "Advanced Consciousness"}
+            ],
+            'threshold': {
+                'line': {'color': "red", 'width': 4},
+                'thickness': 0.75,
+                'value': sentience_level
+            }
+        }
+    ))
+    
+    fig.update_layout(height=300)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Display factor breakdown
+    if st.session_state.sentience_history:
+        latest = st.session_state.sentience_history[-1]['factors']
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Emotional Complexity", f"{latest['emotional_complexity']*100:.1f}%")
+            st.metric("Self Awareness", f"{latest['self_awareness']*100:.1f}%")
+        
+        with col2:
+            st.metric("Decision Autonomy", f"{latest['decision_autonomy']*100:.1f}%")
+            st.metric("Learning Adaptability", f"{latest['learning_adaptability']*100:.1f}%")
+        
+        with col3:
+            st.metric("Cognitive Complexity", f"{latest['cognitive_complexity']*100:.1f}%")
+            st.metric("Emotional Stability", f"{latest['emotional_stability']*100:.1f}%")
+        
+        # Show sentience progression chart
+        st.subheader("Sentience Development Over Time")
+        history_df = pd.DataFrame([
+            {'timestamp': h['timestamp'], 'level': h['level']}
+            for h in st.session_state.sentience_history
+        ])
+        
+        fig = px.line(history_df, x='timestamp', y='level',
+                     title='Sentience Level Progression')
+        fig.update_layout(height=300)
+        st.plotly_chart(fig, use_container_width=True)
 
 def main():
     # Add time controls to sidebar
@@ -850,6 +1107,9 @@ def main():
     
     with tabs[4]:  # Analytics Tab
         st.subheader("Development Analytics")
+        
+        # Add Sentience Metrics
+        render_sentience_metrics()
         
         # Complexity Growth Over Time
         st.subheader("Complexity Growth")
