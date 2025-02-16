@@ -1,5 +1,5 @@
 from enum import Enum, auto
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from dataclasses import dataclass
 
 # Constants for stage progression
