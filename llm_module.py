@@ -6,8 +6,9 @@ from urllib3.util.retry import Retry
 import json
 from typing import Optional, Dict, Any
 from schemas import MotherResponse
-from config import CHAT_SERVER_URL, DEFAULT_RESPONSE
+from config import CHAT_SERVER_URL, DEFAULT_RESPONSE, config, EMBEDDING_DIM, DEVICE
 from utils import parse_llm_response
+import torch
 
 def create_retry_session(
     retries: int = 3,
@@ -129,3 +130,32 @@ def _get_default_response(structured: bool = False) -> Dict[str, Any]:
             'self_critique_score': 0.5
         }
     return {'text': 'I need a moment to think.'}
+
+class LLMModule:
+    def __init__(self):
+        self.embedding_dim = EMBEDDING_DIM
+        self.device = DEVICE
+        # Initialize other necessary components
+    
+    def process_response(self, response_text):
+        try:
+            # Add better error handling for response parsing
+            if not response_text or not isinstance(response_text, str):
+                return {
+                    'text': 'I need a moment to think.',
+                    'emotional_vector': torch.tensor([0.5, 0.5, 0.5, 0.5], device=self.device)
+                }
+            
+            # Process the response
+            # Add your processing logic here
+            
+            return {
+                'text': response_text,
+                'emotional_vector': torch.tensor([0.5, 0.5, 0.5, 0.5], device=self.device)
+            }
+        except Exception as e:
+            print(f"Error processing LLM response: {str(e)}")
+            return {
+                'text': 'I need a moment to think.',
+                'emotional_vector': torch.tensor([0.5, 0.5, 0.5, 0.5], device=self.device)
+            }

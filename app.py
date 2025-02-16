@@ -9,6 +9,7 @@ import pandas as pd
 import numpy as np
 from developmental_stages import DevelopmentalStage
 from config import STAGE_DEFINITIONS
+import json
 
 try:
     from main import DigitalChild, MotherLLM
@@ -17,10 +18,24 @@ except ImportError:
     DigitalChild = None
     MotherLLM = None
 
+def validate_stage_definitions():
+    """Validate that all developmental stages have proper definitions"""
+    missing_stages = []
+    for stage in DevelopmentalStage:
+        if stage not in STAGE_DEFINITIONS:
+            missing_stages.append(stage.name)
+    return missing_stages
+
 # Initialize session state
 if DigitalChild is not None:
     if 'initialized' not in st.session_state:
         try:
+            # Validate stage definitions
+            missing_stages = validate_stage_definitions()
+            if missing_stages:
+                st.error(f"Missing stage definitions for: {', '.join(missing_stages)}")
+                st.stop()
+            
             st.session_state.child = DigitalChild()
             st.session_state.mother = MotherLLM()
             st.session_state.conversation_history = []
@@ -39,6 +54,17 @@ if DigitalChild is not None:
             st.session_state.initialized = True
         except Exception as e:
             st.error(f"Error initializing digital child: {str(e)}")
+            if st.sidebar.checkbox("Debug Mode", value=False):
+                st.exception(e)
+
+def ensure_tensor_device(tensor, target_device=None):
+    """Ensure tensor is on the correct device"""
+    if target_device is None:
+        target_device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    if isinstance(tensor, torch.Tensor):
+        return tensor.to(target_device)
+    return tensor
 
 def calculate_complexity_level():
     """Calculate current complexity level based on various factors"""
@@ -214,24 +240,61 @@ def render_learning_achievements():
 
 def render_upcoming_milestones():
     """Display upcoming milestones"""
-    stage = st.session_state.child.curriculum.current_stage
-    stage_reqs = STAGE_DEFINITIONS[stage]
+    try:
+        stage = st.session_state.child.curriculum.current_stage
+        
+        # Safety check for stage
+        if not isinstance(stage, DevelopmentalStage):
+            st.error("Invalid stage type")
+            return
+        
+        # Get stage requirements with safe access
+        stage_reqs = STAGE_DEFINITIONS.get(stage)
+        if not stage_reqs:
+            st.warning(f"No stage definitions found for {stage.name}")
+            return
+        
+        # Display current milestones
+        st.write("Current Milestones:")
+        current_milestones = getattr(stage_reqs, 'current_milestones', [])
+        if current_milestones:
+            for milestone in current_milestones:
+                st.write(f"✓ {milestone}")
+        else:
+            st.write("No current milestones defined")
+        
+        # Display upcoming milestones
+        st.write("\nUpcoming Milestones:")
+        upcoming_milestones = getattr(stage_reqs, 'upcoming_milestones', [])
+        if upcoming_milestones:
+            for milestone in upcoming_milestones:
+                st.write(f"○ {milestone}")
+        else:
+            st.write("No upcoming milestones defined")
+        
+        # Display next stage milestones if available
+        if stage.value < len(DevelopmentalStage) - 1:
+            try:
+                next_stage = DevelopmentalStage(stage.value + 1)
+                next_stage_reqs = STAGE_DEFINITIONS.get(next_stage)
+                
+                if next_stage_reqs:
+                    next_milestones = getattr(next_stage_reqs, 'current_milestones', [])
+                    if next_milestones:
+                        st.write(f"\nNext Stage ({next_stage.name}) Milestones:")
+                        for milestone in next_milestones:
+                            st.write(f"◇ {milestone}")
+            except Exception as e:
+                if st.sidebar.checkbox("Debug Mode", value=False):
+                    st.error(f"Error loading next stage: {str(e)}")
     
-    st.write("Current Milestones:")
-    for milestone in stage_reqs.current_milestones:
-        st.write(f"✓ {milestone}")
-    
-    st.write("\nUpcoming Milestones:")
-    for milestone in stage_reqs.upcoming_milestones:
-        st.write(f"○ {milestone}")
-    
-    # If available, show next stage's milestones
-    if stage.value < len(DevelopmentalStage) - 1:
-        next_stage = DevelopmentalStage(stage.value + 1)
-        next_stage_reqs = STAGE_DEFINITIONS[next_stage]
-        st.write(f"\nNext Stage ({next_stage.name}) Milestones:")
-        for milestone in next_stage_reqs.current_milestones:
-            st.write(f"◇ {milestone}")
+    except Exception as e:
+        st.error("Error displaying milestones")
+        if st.sidebar.checkbox("Debug Mode", value=False):
+            st.exception(e)
+            st.write("Debug Info:")
+            st.write("- Current stage:", getattr(stage, 'name', 'Unknown') if 'stage' in locals() else "Not available")
+            st.write("- Available stages:", [s.name for s in DevelopmentalStage])
 
 def create_complexity_growth_chart():
     """Create complexity growth visualization"""
@@ -301,6 +364,15 @@ def create_decision_analysis_chart():
     )
     return fig
 
+def format_json_response(response_data):
+    """Format JSON response for better readability"""
+    try:
+        if isinstance(response_data, str):
+            response_data = json.loads(response_data)
+        return json.dumps(response_data, indent=2)
+    except Exception:
+        return str(response_data)
+
 def main():
     if DigitalChild is None:
         st.error("Cannot run application: Required modules not found")
@@ -359,6 +431,10 @@ def main():
             st.metric("Emotional Stability", f"{calculate_emotional_stability():.2f}%")
     
     with tabs[1]:  # Mother's Interface Tab
+        # Add debug mode toggle
+        debug_mode = st.sidebar.checkbox("Debug Mode", value=False, 
+                                       help="Show raw LLM responses and processing details")
+        
         col1, col2 = st.columns([2, 1])
         
         with col1:
@@ -399,57 +475,100 @@ def main():
                 )
             
             if interact_button and user_input:
-                # Generate mother's response
-                stimulus = st.session_state.mother.generate_stimulus(
-                    st.session_state.child.curriculum.current_stage,
-                    user_input
-                )
+                try:
+                    # Generate mother's response
+                    stimulus = st.session_state.mother.generate_stimulus(
+                        st.session_state.child.curriculum.current_stage,
+                        user_input
+                    )
+                    
+                    if debug_mode:
+                        with st.expander("🔍 Debug: Raw LLM Response", expanded=True):
+                            st.code(format_json_response(stimulus), language='json')
+                            st.write("Response Processing Steps:")
+                            st.write("1. Emotional Vector:", stimulus.get('emotional_vector', 'Not found'))
+                            st.write("2. Effectiveness Score:", stimulus.get('effectiveness', 'Not found'))
+                            st.write("3. Complexity Rating:", stimulus.get('complexity', 'Not found'))
+                    
+                    # Ensure emotional vector is on correct device
+                    if 'emotional_vector' in stimulus:
+                        stimulus['emotional_vector'] = ensure_tensor_device(
+                            torch.tensor(stimulus['emotional_vector'])
+                        )
+                    
+                    # Update child's emotional state
+                    st.session_state.child.update_emotions(stimulus['emotional_vector'])
+                    
+                    # Process child's perception and response
+                    perception = st.session_state.child.perceive(stimulus)
+                    response = st.session_state.child.respond(perception)
+                    
+                    if debug_mode:
+                        with st.expander("🔍 Debug: Child Processing", expanded=True):
+                            st.write("Perception:", perception)
+                            st.write("Emotional State:", st.session_state.child.emotional_state.cpu().numpy())
+                            st.write("Current Stage:", st.session_state.child.curriculum.current_stage.name)
+                    
+                    # Add to conversation history
+                    interaction_data = {
+                        "timestamp": datetime.now(),
+                        "user": user_input,
+                        "mother": stimulus.get('text', 'No response'),
+                        "child": response,
+                        "emotion": st.session_state.child.express_feeling(),
+                        "stage": st.session_state.child.curriculum.current_stage.name
+                    }
+                    st.session_state.conversation_history.append(interaction_data)
+                    
+                    # Store emotional state history
+                    emotional_state = st.session_state.child.emotional_state.cpu().numpy()
+                    st.session_state.emotional_history.append(emotional_state)
+                    
+                    # Update teaching history
+                    teaching_data = {
+                        "date": datetime.now(),
+                        "topic": selected_template if selected_template != "Custom" else "Custom Interaction",
+                        "method": stimulus.get('text', 'No response'),
+                        "response": response,
+                        "effectiveness": float(stimulus.get('effectiveness', 0.5)),
+                        "complexity": float(stimulus.get('complexity', 0.5))
+                    }
+                    st.session_state.teaching_history.append(teaching_data)
+                    
+                    # Update complexity history
+                    current_complexity = calculate_complexity_level()
+                    st.session_state.complexity_history.append(current_complexity)
+                    
+                    # Show the interaction result
+                    st.success("Interaction recorded!")
+                    with st.expander("Last Interaction", expanded=True):
+                        st.caption(f"Child feeling: {interaction_data['emotion']}")
+                        st.write("You:", interaction_data['user'])
+                        st.write("Mother:", interaction_data['mother'])
+                        st.write("Child:", interaction_data['child'])
                 
-                # Update child's emotional state
-                st.session_state.child.update_emotions(stimulus['emotional_vector'])
-                
-                # Process child's perception and response
-                perception = st.session_state.child.perceive(stimulus)
-                response = st.session_state.child.respond(perception)
-                
-                # Add to conversation history
-                interaction_data = {
-                    "timestamp": datetime.now(),
-                    "user": user_input,
-                    "mother": stimulus['text'],
-                    "child": response,
-                    "emotion": st.session_state.child.express_feeling(),
-                    "stage": st.session_state.child.curriculum.current_stage.name
-                }
-                st.session_state.conversation_history.append(interaction_data)
-                
-                # Store emotional state history
-                st.session_state.emotional_history.append(
-                    st.session_state.child.emotional_state.cpu().numpy()
-                )
-                
-                # Update teaching history
-                teaching_data = {
-                    "date": datetime.now(),
-                    "topic": selected_template if selected_template != "Custom" else "Custom Interaction",
-                    "method": stimulus['text'],
-                    "response": response,
-                    "effectiveness": float(stimulus.get('effectiveness', 0.5)),
-                    "complexity": float(stimulus.get('complexity', 0.5))
-                }
-                st.session_state.teaching_history.append(teaching_data)
-                
-                # Update complexity history
-                current_complexity = calculate_complexity_level()
-                st.session_state.complexity_history.append(current_complexity)
-                
-                # Show the interaction result
-                st.success("Interaction recorded!")
-                with st.expander("Last Interaction", expanded=True):
-                    st.caption(f"Child feeling: {interaction_data['emotion']}")
-                    st.write("You:", interaction_data['user'])
-                    st.write("Mother:", interaction_data['mother'])
-                    st.write("Child:", interaction_data['child'])
+                except Exception as e:
+                    st.error(f"Error during interaction: {str(e)}")
+                    if debug_mode:
+                        st.exception(e)  # This will show the full traceback
+                    if "device" in str(e).lower():
+                        st.info("Attempting to fix device mismatch...")
+                        try:
+                            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                            st.session_state.child.to(device)
+                            st.success("Device mismatch fixed. Please try the interaction again.")
+                        except Exception as device_e:
+                            st.error(f"Could not fix device mismatch: {str(device_e)}")
+            
+            # Add debug history panel
+            if debug_mode and st.session_state.conversation_history:
+                st.subheader("🔍 Debug: Interaction History")
+                for idx, interaction in enumerate(reversed(st.session_state.conversation_history[-5:])):
+                    with st.expander(f"Interaction {len(st.session_state.conversation_history)-idx}", expanded=False):
+                        st.json(interaction)
+                        if hasattr(st.session_state.child, 'decision_history'):
+                            st.write("Decision History for this interaction:", 
+                                   st.session_state.child.decision_history[-(idx+1):])
             
             # Display recent interactions
             st.subheader("Recent Interactions")
