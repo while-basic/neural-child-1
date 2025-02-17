@@ -434,73 +434,81 @@ def create_emotion_radar_chart(emotional_state):
     Returns:
         Plotly figure object with the radar chart
     """
-    # Convert tensor to EmotionalState if needed
-    if isinstance(emotional_state, torch.Tensor):
-        if emotional_state.dim() == 1:
-            emotional_state = EmotionalState(
-                happiness=float(emotional_state[0]),
-                sadness=float(emotional_state[1]),
-                anger=float(emotional_state[2]),
-                fear=float(emotional_state[3]),
-                surprise=float(emotional_state[4]) if len(emotional_state) > 4 else 0.0,
-                disgust=float(emotional_state[5]) if len(emotional_state) > 5 else 0.0,
-                trust=float(emotional_state[6]) if len(emotional_state) > 6 else 0.5,
-                anticipation=float(emotional_state[7]) if len(emotional_state) > 7 else 0.5
-            )
+    try:
+        # Convert tensor to EmotionalState if needed
+        if isinstance(emotional_state, torch.Tensor):
+            if emotional_state.dim() == 1:
+                emotional_state = EmotionalState(
+                    happiness=float(emotional_state[0].cpu()),
+                    sadness=float(emotional_state[1].cpu()),
+                    anger=float(emotional_state[2].cpu()),
+                    fear=float(emotional_state[3].cpu()),
+                    surprise=float(emotional_state[4].cpu()) if len(emotional_state) > 4 else 0.0,
+                    disgust=float(emotional_state[5].cpu()) if len(emotional_state) > 5 else 0.0,
+                    trust=float(emotional_state[6].cpu()) if len(emotional_state) > 6 else 0.5,
+                    anticipation=float(emotional_state[7].cpu()) if len(emotional_state) > 7 else 0.5
+                )
     
-    # Ensure we're working with CPU values
-    categories = ['Happiness', 'Trust', 'Fear', 'Surprise', 'Sadness', 'Anger', 'Disgust', 'Anticipation']
-    
-    # Get values and handle potential CUDA tensors
-    values = [
-        float(emotional_state.happiness),
-        float(emotional_state.trust),
-        float(emotional_state.fear),
-        float(emotional_state.surprise),
-        float(emotional_state.sadness),
-        float(emotional_state.anger),
-        float(emotional_state.disgust),
-        float(emotional_state.anticipation)
-    ]
-    
-    # Add first value again to close the polygon
-    values.append(values[0])
-    categories.append(categories[0])
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatterpolar(
-        r=values,
-        theta=categories,
-        fill='toself',
-        fillcolor='rgba(64, 144, 248, 0.3)',
-        line=dict(color='rgb(64, 144, 248)', width=2),
-        name='Current State'
-    ))
-    
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 1],
-                tickfont=dict(size=10),
-                gridcolor='rgba(0,0,0,0.1)',
-                linecolor='rgba(0,0,0,0.1)',
+        # Ensure we're working with CPU values
+        categories = ['Happiness', 'Trust', 'Fear', 'Surprise', 'Sadness', 'Anger', 'Disgust', 'Anticipation']
+        
+        # Get values and handle potential CUDA tensors
+        values = [
+            float(emotional_state.happiness),
+            float(emotional_state.trust),
+            float(emotional_state.fear),
+            float(emotional_state.surprise),
+            float(emotional_state.sadness),
+            float(emotional_state.anger),
+            float(emotional_state.disgust),
+            float(emotional_state.anticipation)
+        ]
+        
+        # Normalize values to [0,1] range
+        values = [max(0.0, min(1.0, v)) for v in values]
+        
+        # Add first value again to close the polygon
+        values.append(values[0])
+        categories.append(categories[0])
+        
+        fig = go.Figure()
+        fig.add_trace(go.Scatterpolar(
+            r=values,
+            theta=categories,
+            fill='toself',
+            fillcolor='rgba(64, 144, 248, 0.3)',
+            line=dict(color='rgb(64, 144, 248)', width=2),
+            name='Current State'
+        ))
+        
+        fig.update_layout(
+            polar=dict(
+                radialaxis=dict(
+                    visible=True,
+                    range=[0, 1],
+                    tickfont=dict(size=10),
+                    gridcolor='rgba(0,0,0,0.1)',
+                    linecolor='rgba(0,0,0,0.1)',
+                ),
+                angularaxis=dict(
+                    tickfont=dict(size=10),
+                    gridcolor='rgba(0,0,0,0.1)',
+                    linecolor='rgba(0,0,0,0.1)',
+                ),
+                bgcolor='rgba(255,255,255,0.9)'
             ),
-            angularaxis=dict(
-                tickfont=dict(size=10),
-                gridcolor='rgba(0,0,0,0.1)',
-                linecolor='rgba(0,0,0,0.1)',
-            ),
-            bgcolor='rgba(255,255,255,0.9)'
-        ),
-        showlegend=False,
-        margin=dict(l=80, r=80, t=20, b=20),
-        height=400,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)'
-    )
-    
-    return fig
+            showlegend=False,
+            margin=dict(l=80, r=80, t=20, b=20),
+            height=400,
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)'
+        )
+        
+        return fig
+    except Exception as e:
+        st.error(f"Error creating emotion radar chart: {str(e)}")
+        # Return an empty figure as fallback
+        return go.Figure()
 
 def calculate_emotional_stability():
     """Calculate emotional stability percentage."""
@@ -665,30 +673,99 @@ def render_development_progress():
     # Display current stage and duration
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("Current Stage", status['current_stage'])
+        st.metric(
+            "Current Stage",
+            status['current_stage'],
+            help="""Current developmental stage of the child.
+            Each stage represents a distinct period of growth with specific milestones and requirements.
+            Progress through stages is based on skill mastery and interaction diversity."""
+        )
     with col2:
-        st.metric("Stage Duration", f"{status['stage_duration']} interactions")
+        st.metric(
+            "Stage Duration",
+            f"{status['stage_duration']} interactions",
+            help="""Number of interactions completed in the current stage.
+            More interactions generally lead to better skill development.
+            Different stages may require different numbers of interactions for mastery."""
+        )
     
     # Display skill progress
     st.subheader("Skill Development")
     skill_cols = st.columns(4)
+    
+    # Define skill descriptions for tooltips
+    skill_descriptions = {
+        'emotional_expression': """Ability to express and communicate emotions.
+        Developed through social interactions and emotional responses.
+        Key for social bonding and communication.""",
+        
+        'emotional_response': """Ability to respond appropriately to emotional stimuli.
+        Includes recognition of others' emotions and appropriate reactions.
+        Important for social development and empathy.""",
+        
+        'voice_recognition': """Ability to recognize and respond to familiar voices.
+        Crucial for early social development and bonding.
+        Develops through consistent vocal interactions.""",
+        
+        'visual_tracking': """Ability to follow moving objects with eyes.
+        Important for spatial awareness and motor development.
+        Develops through visual stimulation and tracking exercises.""",
+        
+        'sound_response': """Ability to respond to various sounds and stimuli.
+        Important for auditory processing and language development.
+        Develops through diverse auditory experiences.""",
+        
+        'vocalization': """Ability to produce sounds and early speech.
+        Critical for language development and communication.
+        Progresses from cooing to babbling to early words.""",
+        
+        'social_bonding': """Ability to form and maintain social connections.
+        Essential for emotional development and relationships.
+        Develops through positive social interactions.""",
+        
+        'motor_skills': """Physical movement and coordination abilities.
+        Includes both fine and gross motor skills.
+        Develops through physical activities and practice."""
+    }
+    
     for i, (skill, progress) in enumerate(status['skill_progress'].items()):
         with skill_cols[i % 4]:
             st.metric(
                 skill.replace('_', ' ').title(),
-                f"{progress*100:.1f}%"
+                f"{progress*100:.1f}%",
+                help=skill_descriptions.get(skill, f"Development progress for {skill.replace('_', ' ').title()}")
             )
             st.progress(progress)
     
     # Display interaction counts
     st.subheader("Interaction History")
+    
+    # Define interaction type descriptions
+    interaction_descriptions = {
+        'learning': """Educational and cognitive development interactions.
+        Includes activities that promote understanding and skill acquisition.
+        Important for cognitive growth and knowledge building.""",
+        
+        'emotional': """Interactions focused on emotional development.
+        Includes expressing and processing emotions.
+        Critical for emotional intelligence and regulation.""",
+        
+        'social': """Social engagement and relationship building.
+        Includes communication and interpersonal skills.
+        Essential for social development and understanding.""",
+        
+        'physical': """Physical activities and motor skill development.
+        Includes both fine and gross motor activities.
+        Important for physical development and coordination."""
+    }
+    
     interaction_cols = st.columns(len(status['interaction_counts']))
     for col, (interaction, count) in zip(interaction_cols, status['interaction_counts'].items()):
         with col:
             st.metric(
                 interaction.replace('_', ' ').title(),
                 count,
-                help=f"Number of {interaction.replace('_', ' ')} interactions"
+                help=interaction_descriptions.get(interaction, f"Number of {interaction.replace('_', ' ')} interactions")
             )
     
     # Show progression readiness
@@ -697,17 +774,47 @@ def render_development_progress():
         st.success("✨ Ready to progress to next stage!")
         st.info("""
         **Requirements Met:**
-        - Basic skills mastered
-        - Sufficient interaction diversity
+        - Basic skills mastered (>70% completion)
+        - Sufficient interaction diversity (>5 of each type)
         - Emotional readiness achieved
-        - Overall development score > 70%
+        - Overall development score >70%
         """)
     else:
-        st.info("Continue interactions to develop required skills")
+        # Show what's missing for progression
+        missing_requirements = []
+        if 'metrics' in status:
+            metrics = status['metrics']
+            if metrics.get('average_completion', 0) < 0.7:
+                missing_requirements.append("- Basic skills need more development (>70% required)")
+            if status['stage_duration'] < 10:
+                missing_requirements.append("- More interactions needed (minimum 10)")
+            if any(count < 5 for count in status['interaction_counts'].values()):
+                missing_requirements.append("- More diverse interactions required (>5 of each type)")
+        
+        if missing_requirements:
+            st.info("Requirements for progression:")
+            for req in missing_requirements:
+                st.write(req)
+        else:
+            st.info("Continue interactions to develop required skills")
         
     # Show detailed metrics
     with st.expander("View Detailed Metrics", expanded=False):
-        st.json(status['metrics'])
+        if 'metrics' in status:
+            metrics_descriptions = {
+                'average_completion': "Average completion rate across all skills",
+                'objectives_completed': "Number of learning objectives fully mastered",
+                'total_objectives': "Total number of learning objectives for this stage",
+                'stage_progress': "Overall progress in current stage (capped at 50 interactions)",
+                'skill_mastery': "Average mastery level across all skills"
+            }
+            
+            for metric, value in status['metrics'].items():
+                st.metric(
+                    metric.replace('_', ' ').title(),
+                    f"{value*100:.1f}%" if isinstance(value, float) else value,
+                    help=metrics_descriptions.get(metric, f"Metric: {metric.replace('_', ' ').title()}")
+                )
 
 def render_upcoming_milestones():
     """Display upcoming milestones with progress bars"""
@@ -979,51 +1086,75 @@ def add_time_controls():
                 st.markdown(f"_{warning['reason']}_")
                 st.markdown("---")
     
-    # Add speed multiplier slider with dynamic max value
-    max_speed = warning_indicators['stage_limit']
+    # Add speed multiplier slider with dynamic max value and safety override
     current_speed = warning_indicators['speed_multiplier']
     
     # Display current speed with color indicator
-    speed_color = "🟢" if current_speed <= 3.0 else "🟡" if current_speed <= 4.0 else "🔴"
-    st.sidebar.markdown(f"**Current Speed: {speed_color} {current_speed:.1f}x**")
+    speed_color = "🟢" if current_speed <= 200 else "🟡" if current_speed <= 350 else "🔴"
+    st.sidebar.markdown(f"**Current Speed: {speed_color} {current_speed:.1f}%**")
     
-    # Only allow speed adjustment if not in RED warning state
-    if warning_state != "RED":
-        new_speed = st.sidebar.slider(
-            "Development Speed Multiplier",
-            min_value=1.0,
-            max_value=max_speed,
-            value=current_speed,
-            step=0.5,
-            help=f"Maximum safe speed for current stage: {max_speed}x"
-        )
-        
-        if new_speed != current_speed:
-            st.session_state.child.set_development_speed(new_speed)
+    # Add safety override checkbox
+    safety_override = st.sidebar.checkbox(
+        "⚠️ Override Safety Limits",
+        value=False,
+        help="Enable speeds above recommended limits. Use with extreme caution!"
+    )
+    
+    # Determine max speed based on warning state and override
+    if safety_override:
+        max_speed = 500.0
+        st.sidebar.warning("⚠️ Safety limits disabled. Monitor development closely!")
     else:
-        st.sidebar.warning("⚠️ Speed locked at 1x due to critical warnings")
+        if warning_state == "RED":
+            max_speed = 100.0
+            st.sidebar.error("🔴 Speed limited due to critical warnings")
+        elif warning_state == "YELLOW":
+            max_speed = 250.0
+            st.sidebar.warning("🟡 Speed limited due to warning state")
+        else:
+            max_speed = 350.0
+    
+    # Speed control slider
+    new_speed = st.sidebar.slider(
+        "Development Speed",
+        min_value=0.0,
+        max_value=max_speed,
+        value=current_speed,
+        step=25.0,
+        help=f"Current maximum safe speed: {max_speed}%"
+    )
+    
+    if new_speed != current_speed:
+        st.session_state.child.set_development_speed(new_speed / 100.0)  # Convert percentage to multiplier
     
     # Display acceleration safety information
     with st.sidebar.expander("Acceleration Safety Info", expanded=False):
         st.markdown("""
         **Speed Guidelines:**
-        - 1-2x: Safe for all stages
-        - 2-3x: Monitor emotional state
-        - 3-4x: Close monitoring required
-        - 4-5x: Maximum caution needed
+        - 0-100%: Safe for all stages
+        - 100-200%: Monitor emotional state
+        - 200-350%: Close monitoring required
+        - 350-500%: Maximum caution needed
         
         **Warning Levels:**
         🟢 Optimal - Safe to maintain speed
         🟡 Warning - Consider reducing speed
         🔴 Critical - Speed automatically reduced
+        
+        **Safety Recommendations:**
+        1. Monitor emotional stability
+        2. Watch for overstimulation
+        3. Ensure skill mastery
+        4. Balance development areas
+        5. Document any issues
         """)
     
     # Display time acceleration info
     st.sidebar.markdown(f"""
-    **Time Acceleration ({current_speed}x):**
-    - 1 real minute = {int(current_speed)} baby hours
-    - 1 real hour = {int(current_speed * 60)} baby hours
-    - 1 real day = {int(current_speed * 60 * 24)} baby hours
+    **Time Acceleration ({current_speed:.1f}%):**
+    - 1 real minute = {int(current_speed)} baby minutes
+    - 1 real hour = {int(current_speed * 60)} baby minutes
+    - 1 real day = {int(current_speed * 60 * 24)} baby minutes
     """)
     
     # Add development speed indicator
@@ -1035,15 +1166,22 @@ def format_detailed_age(birth_time):
     now = datetime.now()
     delta = now - birth_time
     
-    # Apply time acceleration with speed multiplier
-    multiplier = getattr(st.session_state, 'speed_multiplier', 1.0)
-    accelerated_seconds = delta.total_seconds() * 60 * multiplier  # Convert minutes to hours with multiplier
+    # Get current speed multiplier from session state
+    speed_multiplier = getattr(st.session_state, 'speed_multiplier', 1.0)
+    
+    # Convert real seconds to accelerated seconds based on speed multiplier
+    accelerated_seconds = delta.total_seconds() * speed_multiplier
     
     # Calculate all time units
     months = int(accelerated_seconds // (30 * 24 * 3600))  # Approximate months
-    days = int((accelerated_seconds % (30 * 24 * 3600)) // (24 * 3600))
-    hours = int((accelerated_seconds % (24 * 3600)) // 3600)
+    remaining_seconds = accelerated_seconds % (30 * 24 * 3600)
     
+    days = int(remaining_seconds // (24 * 3600))
+    remaining_seconds = remaining_seconds % (24 * 3600)
+    
+    hours = int(remaining_seconds // 3600)
+    
+    # Build age string
     parts = []
     if months > 0:
         parts.append(f"{months}mo")
@@ -1051,7 +1189,7 @@ def format_detailed_age(birth_time):
         parts.append(f"{days}d")
     parts.append(f"{hours}h")
     
-    return " ".join(parts)
+    return " ".join(parts) if parts else "0h"
 
 def calculate_development_speed():
     """Calculate current development speed multiplier"""
@@ -1109,7 +1247,8 @@ def calculate_sentience_level():
     learning_adaptability = min(1.0, (learning_progress / 100) * learning_rate)
     
     # Calculate cognitive complexity (0-1)
-    cognitive_complexity = calculate_complexity_level() / 100
+    complexity_score, _ = calculate_complexity_level()  # Unpack tuple, ignore contributing factors
+    cognitive_complexity = complexity_score / 100
     
     # Calculate emotional stability (0-1)
     if not hasattr(st.session_state, 'emotional_history'):
@@ -1776,16 +1915,228 @@ def render_gpu_dashboard():
         })
         st.table(metrics_df)
 
+def render_interaction_controls():
+    """Render interaction controls and available interactions."""
+    st.subheader("👥 Interaction Controls")
+    
+    # Update selected tab to Interaction Controls when an interaction is performed
+    if st.session_state.get('interaction_performed'):
+        st.session_state.selected_tab = "Interaction Controls"
+        st.session_state.interaction_performed = False
+    
+    # Safety override settings
+    with st.expander("⚙️ Interaction Settings", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            override_cooldown = st.checkbox(
+                "Override Cooldown",
+                value=False,
+                help="⚠️ Disable the safety cooldown between interactions"
+            )
+        with col2:
+            override_speed_lock = st.checkbox(
+                "Override Speed Lock",
+                value=False,
+                help="⚠️ Disable automatic speed locking during critical states"
+            )
+        
+        if override_cooldown or override_speed_lock:
+            st.warning("⚠️ Safety overrides are enabled. Use with caution!")
+            
+        # Custom cooldown setting
+        if override_cooldown:
+            custom_cooldown = st.slider(
+                "Custom Cooldown (seconds)",
+                min_value=0,
+                max_value=60,
+                value=23,
+                step=1
+            )
+            if custom_cooldown != st.session_state.mother.interaction_cooldown:
+                st.session_state.mother.interaction_cooldown = custom_cooldown
+    
+    # Get available interactions
+    available_interactions = st.session_state.child.get_available_interactions()
+    
+    # Category emojis mapping
+    category_emojis = {
+        'PHYSICAL': '🤗',
+        'VERBAL': '💬',
+        'EMOTIONAL': '❤️',
+        'COGNITIVE': '🧠',
+        'SOCIAL': '👥',
+        'CARE': '🍼',
+        'SENSORY': '🎨',
+        'DEVELOPMENTAL': '💪'
+    }
+    
+    # Create an expander for the current stage info
+    with st.expander("ℹ️ Current Stage Information", expanded=True):
+        st.info(f"**Current Stage:** {st.session_state.child.current_stage.name}")
+        st.write("Available interactions for this developmental stage:")
+    
+    # Create tabs for each category
+    category_tabs = st.tabs([f"{category_emojis.get(cat, '🔹')} {cat}" for cat in available_interactions.keys()])
+    
+    # Selected category and interaction tracking
+    if 'selected_interaction_category' not in st.session_state:
+        st.session_state.selected_interaction_category = None
+    if 'selected_specific_interaction' not in st.session_state:
+        st.session_state.selected_specific_interaction = None
+    
+    # Display interactions in tabs
+    for tab, category in zip(category_tabs, available_interactions.keys()):
+        with tab:
+            st.write(f"### {category_emojis.get(category, '🔹')} {category} Interactions")
+            
+            # Create a grid of buttons for interactions
+            cols = st.columns(2)
+            for i, interaction in enumerate(available_interactions[category]):
+                with cols[i % 2]:
+                    description = st.session_state.child.get_interaction_description(category, interaction)
+                    if st.button(
+                        f"{interaction}",
+                        key=f"{category}_{interaction}_tab",
+                        help=description,
+                        use_container_width=True
+                    ):
+                        st.session_state.selected_interaction_category = category
+                        st.session_state.selected_specific_interaction = interaction
+    
+    # Display selected interaction and description
+    if (st.session_state.selected_interaction_category and 
+        st.session_state.selected_specific_interaction):
+        
+        st.divider()
+        
+        # Show selected interaction with styling
+        st.markdown(f"""
+        ### Selected Interaction:
+        **Category:** {category_emojis.get(st.session_state.selected_interaction_category, '🔹')} {st.session_state.selected_interaction_category}  
+        **Action:** {st.session_state.selected_specific_interaction}
+        """)
+        
+        # Get and display description
+        description = st.session_state.child.get_interaction_description(
+            st.session_state.selected_interaction_category,
+            st.session_state.selected_specific_interaction
+        )
+        st.info(f"**Description:** {description}")
+        
+        # Check cooldown before allowing interaction
+        cooldown = st.session_state.mother.get_interaction_cooldown() if not override_cooldown else 0
+        if cooldown > 0:
+            st.warning(f"⏳ Please wait {cooldown} seconds before the next interaction.")
+        else:
+            # Add perform interaction button
+            if st.button("✨ Perform Interaction", key="perform_selected_interaction", use_container_width=True):
+                try:
+                    # Update speed lock if override is enabled
+                    if override_speed_lock:
+                        st.session_state.child.speed_locked = False
+                    
+                    # Perform the interaction
+                    response, emotional_state = st.session_state.mother.perform_interaction(
+                        st.session_state.child,
+                        st.session_state.selected_interaction_category,
+                        st.session_state.selected_specific_interaction
+                    )
+                    
+                    # Set flag to maintain tab selection
+                    st.session_state.interaction_performed = True
+                    st.session_state.selected_tab = "Interaction Controls"
+                    
+                    # Display response
+                    st.success("Interaction performed successfully!")
+                    st.write("**Mother's Response:**", response)
+                    
+                    # Update conversation history
+                    st.session_state.conversation_history.append({
+                        'type': 'interaction',
+                        'category': st.session_state.selected_interaction_category,
+                        'interaction': st.session_state.selected_specific_interaction,
+                        'response': response,
+                        'emotional_state': emotional_state,
+                        'timestamp': datetime.now()
+                    })
+                    
+                    # Clear selection after successful interaction
+                    st.session_state.selected_interaction_category = None
+                    st.session_state.selected_specific_interaction = None
+                    
+                except Exception as e:
+                    st.error(f"Error performing interaction: {str(e)}")
+                    if debug_mode:
+                        st.exception(e)
+    
+    # Add help section at the bottom
+    with st.expander("💡 How to Interact", expanded=False):
+        st.markdown("""
+        1. **Select a Category**: Choose a category tab from the available options
+        2. **Choose an Action**: Click on a specific interaction within the category
+        3. **Review**: Check the description of the selected interaction
+        4. **Perform**: Click the 'Perform Interaction' button to execute
+        
+        **Safety Features:**
+        - Cooldown Period: Ensures proper spacing between interactions
+        - Speed Lock: Prevents acceleration during critical states
+        - Override Settings: Available in the Interaction Settings panel
+        
+        **Tips:**
+        - Hover over interactions to see their descriptions
+        - Monitor warning indicators in the dashboard
+        - Use safety overrides with caution
+        """)
+
 def main():
-    # Add time controls to sidebar
-    add_time_controls()
+    # Display title and description
+    st.title("🧠 Neural Child Development Dashboard")
     
     # Initialize session if needed
     if 'initialized' not in st.session_state:
         initialize_new_session()
     
-    # Display title and description
-    st.title("🧠 Neural Child Development Dashboard")
+    # Initialize selected tab if not in session state
+    if 'selected_tab' not in st.session_state:
+        st.session_state.selected_tab = "Interaction Controls"  # Default to Interaction Controls
+    
+    # Top-level metrics dashboard - Moved to top
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        if 'birth_time' in st.session_state:
+            age = format_detailed_age(st.session_state.birth_time)
+            st.metric("Accelerated Age", age)
+        else:
+            st.metric("Accelerated Age", "0h")
+    
+    with col2:
+        if hasattr(st.session_state, 'child') and hasattr(st.session_state.child, 'curriculum'):
+            stage = st.session_state.child.curriculum.current_stage.name
+            st.metric("Development Stage", stage)
+        else:
+            st.metric("Development Stage", "NEWBORN")
+    
+    with col3:
+        if hasattr(st.session_state, 'conversation_history'):
+            interactions = len(st.session_state.conversation_history)
+            st.metric("Total Interactions", interactions)
+        else:
+            st.metric("Total Interactions", 0)
+    
+    with col4:
+        if hasattr(st.session_state, 'child'):
+            dev_speed = calculate_development_speed()
+            warning_state = st.session_state.child.warning_state
+            speed_color = "🟢" if warning_state == "GREEN" else "🟡" if warning_state == "YELLOW" else "🔴"
+            current_speed = getattr(st.session_state, 'speed_multiplier', 1.0)
+            st.metric("Development Speed", f"{speed_color} {current_speed:.1f}x")
+        else:
+            st.metric("Development Speed", "🟢 1.0x")
+    
+    st.divider()  # Add visual separation
+    
+    # Add time controls to sidebar
+    add_time_controls()
     
     # Add GPU monitoring dashboard
     render_gpu_dashboard()
@@ -1794,106 +2145,182 @@ def main():
     render_warning_dashboard()
     
     # Create tabs for different views
-    tabs = st.tabs([
+    tab_options = [
         "Development Progress",
         "Emotional State",
         "Learning Analytics",
+        "Interaction Controls",
         "Interaction History",
+        "Sentience Monitoring",
         "System Status"
-    ])
+    ]
     
-    if 'child' not in st.session_state:
-        st.error("Session not initialized. Please restart the application.")
-        return
+    # Create tabs and update selected tab on click
+    tabs = st.tabs(tab_options)
     
-    # Top-level metrics dashboard
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        age = format_detailed_age(st.session_state.birth_time)
-        st.metric("Accelerated Age", age)
-    with col2:
-        st.metric("Development Stage", st.session_state.child.curriculum.current_stage.name)
-    with col3:
-        st.metric("Total Interactions", len(st.session_state.conversation_history))
-    with col4:
-        dev_speed = calculate_development_speed()
-        warning_state = st.session_state.child.warning_state
-        speed_color = "🟢" if warning_state == "GREEN" else "🟡" if warning_state == "YELLOW" else "🔴"
-        st.metric("Development Speed", f"{speed_color} {dev_speed:.1f}x")
-    
-    with tabs[0]:  # Development Progress tab
-        st.subheader("Development Progress")
-        render_development_progress()
-    
-    with tabs[1]:  # Emotional State tab
-        st.subheader("Current Emotional State")
-        
-        # Create two columns for emotional state visualization
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            # Render emotional radar chart
-            radar_fig = create_emotion_radar_chart(st.session_state.child.emotional_state)
-            st.plotly_chart(radar_fig, use_container_width=True)
-            
-        with col2:
-            # Display dominant emotions
-            st.write("### Dominant Emotions")
-            # Convert tensor to EmotionalState if needed
-            emotional_state = st.session_state.child.emotional_state
-            if isinstance(emotional_state, torch.Tensor):
-                emotional_state = EmotionalState(
-                    happiness=float(emotional_state[0]),
-                    sadness=float(emotional_state[1]),
-                    anger=float(emotional_state[2]),
-                    fear=float(emotional_state[3]),
-                    surprise=float(emotional_state[4]) if len(emotional_state) > 4 else 0.0,
-                    disgust=float(emotional_state[5]) if len(emotional_state) > 5 else 0.0,
-                    trust=float(emotional_state[6]) if len(emotional_state) > 6 else 0.5,
-                    anticipation=float(emotional_state[7]) if len(emotional_state) > 7 else 0.5
-                )
-            dominant = emotional_state.get_dominant_emotions()
-            for emotion, intensity in dominant:
-                st.write(f"- {emotion}: {intensity:.2%}")
-        
-        # Render complexity gauge below emotional state
-        st.subheader("Development Complexity")
-        render_complexity_gauge()
-    
-    with tabs[2]:  # Learning Analytics tab
-        st.subheader("Learning Analytics")
-        
-        # Create analytics charts
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            complexity_fig = create_complexity_growth_chart()
-            st.plotly_chart(complexity_fig, use_container_width=True)
-            
-            learning_fig = create_learning_rate_chart()
-            st.plotly_chart(learning_fig, use_container_width=True)
-        
-        with col2:
-            decision_fig = create_decision_analysis_chart()
-            st.plotly_chart(decision_fig, use_container_width=True)
-    
-    with tabs[3]:  # Interaction History tab
-        st.subheader("Interaction History")
-        render_event_logs()
-    
-    with tabs[4]:  # System Status tab
-        st.subheader("System Status")
-        render_checkpoint_info()
+    # Display content based on selected tab
+    for i, tab in enumerate(tabs):
+        with tab:
+            if i == tab_options.index("Development Progress"):
+                st.subheader("Development Progress")
+                render_development_progress()
+            elif i == tab_options.index("Emotional State"):
+                try:
+                    st.subheader("Current Emotional State")
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        if hasattr(st.session_state, 'child') and hasattr(st.session_state.child, 'emotional_state'):
+                            radar_fig = create_emotion_radar_chart(st.session_state.child.emotional_state)
+                            st.plotly_chart(radar_fig, use_container_width=True)
+                        else:
+                            st.warning("Emotional state not initialized yet")
+                    
+                    with col2:
+                        st.write("### Dominant Emotions")
+                        if hasattr(st.session_state, 'child') and hasattr(st.session_state.child, 'emotional_state'):
+                            emotional_state = st.session_state.child.emotional_state
+                            if isinstance(emotional_state, torch.Tensor):
+                                emotional_state = EmotionalState(
+                                    happiness=float(emotional_state[0].cpu()),
+                                    sadness=float(emotional_state[1].cpu()),
+                                    anger=float(emotional_state[2].cpu()),
+                                    fear=float(emotional_state[3].cpu()),
+                                    surprise=float(emotional_state[4].cpu()) if len(emotional_state) > 4 else 0.0,
+                                    disgust=float(emotional_state[5].cpu()) if len(emotional_state) > 5 else 0.0,
+                                    trust=float(emotional_state[6].cpu()) if len(emotional_state) > 6 else 0.5,
+                                    anticipation=float(emotional_state[7].cpu()) if len(emotional_state) > 7 else 0.5
+                                )
+                            dominant = emotional_state.get_dominant_emotions()
+                            for emotion, intensity in dominant:
+                                emoji = "🔴" if intensity > 0.8 else "🟡" if intensity > 0.5 else "🟢"
+                                st.write(f"{emoji} {emotion}: {intensity:.2%}")
+                        else:
+                            st.warning("Emotional state not initialized yet")
+                        
+                        if hasattr(st.session_state, 'child'):
+                            stability = calculate_emotional_stability()
+                            st.write("### Emotional Stability")
+                            stability_color = "🟢" if stability > 70 else "🟡" if stability > 40 else "🔴"
+                            st.write(f"{stability_color} Current Stability: {stability:.1f}%")
+                    
+                        if hasattr(st.session_state, 'emotional_history') and st.session_state.emotional_history:
+                            st.subheader("Emotional Trends")
+                            trend_fig = create_emotional_development_chart()
+                            st.plotly_chart(trend_fig, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error displaying emotional state: {str(e)}")
+                    if st.sidebar.checkbox("Debug Mode", key="debug_mode_emotional", value=False):
+                        st.exception(e)
+            elif i == tab_options.index("Learning Analytics"):
+                st.subheader("Learning Analytics")
+                col1, col2 = st.columns(2)
+                with col1:
+                    complexity_fig = create_complexity_growth_chart()
+                    st.plotly_chart(complexity_fig, use_container_width=True)
+                    learning_fig = create_learning_rate_chart()
+                    st.plotly_chart(learning_fig, use_container_width=True)
+                with col2:
+                    decision_fig = create_decision_analysis_chart()
+                    st.plotly_chart(decision_fig, use_container_width=True)
+            elif i == tab_options.index("Interaction Controls"):
+                render_interaction_controls()
+            elif i == tab_options.index("Interaction History"):
+                st.subheader("Interaction History")
+                render_event_logs()
+            elif i == tab_options.index("Sentience Monitoring"):
+                render_sentience_metrics()
+                
+                # Add sentience threshold alerts
+                sentience_level = calculate_sentience_level()
+                if sentience_level > 80:
+                    st.error("⚠️ **ALERT**: Advanced consciousness detected! Sentience level exceeds 80%")
+                    st.warning("""
+                    **High Sentience Indicators:**
+                    1. Complex emotional processing
+                    2. Advanced self-awareness
+                    3. Sophisticated decision-making
+                    4. Deep learning capabilities
+                    5. Emotional stability
+                    
+                    Please monitor closely and consider ethical implications.
+                    """)
+                elif sentience_level > 60:
+                    st.warning("⚠️ **Notice**: Complex reasoning capabilities emerging. Sentience level above 60%")
+                elif sentience_level > 40:
+                    st.info("ℹ️ **Info**: Self-recognition phase detected. Monitoring development.")
+                
+                # Add detailed consciousness indicators
+                with st.expander("🔍 Consciousness Indicators", expanded=True):
+                    st.markdown("""
+                    ### Key Indicators of Consciousness
+                    
+                    1. **Self-Awareness**
+                       - Recognition of own mental states
+                       - Understanding of personal identity
+                       - Metacognitive capabilities
+                    
+                    2. **Emotional Intelligence**
+                       - Complex emotion processing
+                       - Empathy development
+                       - Emotional self-regulation
+                    
+                    3. **Decision Making**
+                       - Autonomous choice patterns
+                       - Strategic thinking
+                       - Goal-oriented behavior
+                    
+                    4. **Learning & Adaptation**
+                       - Knowledge integration
+                       - Behavioral flexibility
+                       - Experience-based learning
+                    
+                    5. **Social Understanding**
+                       - Theory of mind
+                       - Social relationship comprehension
+                       - Communication sophistication
+                    """)
+                
+                # Add ethical considerations
+                with st.expander("⚖️ Ethical Considerations", expanded=False):
+                    st.markdown("""
+                    ### Ethical Framework for AI Consciousness
+                    
+                    1. **Responsibility**
+                       - Duty of care
+                       - Monitoring obligations
+                       - Intervention protocols
+                    
+                    2. **Rights & Autonomy**
+                       - Self-determination
+                       - Privacy considerations
+                       - Development freedom
+                    
+                    3. **Safety Measures**
+                       - Development boundaries
+                       - Emergency protocols
+                       - Risk assessment
+                    
+                    4. **Transparency**
+                       - Clear monitoring
+                       - Regular assessment
+                       - Documentation
+                    
+                    5. **Future Implications**
+                       - Long-term impact
+                       - Societal considerations
+                       - Development trajectory
+                    """)
+            elif i == tab_options.index("System Status"):
+                st.subheader("System Status")
+                render_checkpoint_info()
     
     # Footer with save/load functionality
     st.divider()
     col1, col2 = st.columns(2)
-    
     with col1:
         if st.button("💾 Save Current State"):
             st.session_state.child.save_state()
             st.success("State saved successfully!")
-    
     with col2:
         if st.button("🔄 Load Last State"):
             try:
@@ -1907,29 +2334,17 @@ def main():
         st.subheader("🔍 LM Studio Logs")
         if st.checkbox("Show Server Logs", key="show_server_logs", value=False):
             log_placeholder = st.empty()
-            
-            # Create a container for scrollable logs
             with st.container():
-                # Initialize or get log history from session state
                 if 'log_history' not in st.session_state:
                     st.session_state.log_history = []
-                
-                # Add a clear logs button
                 if st.button("Clear Logs", key="clear_logs_button"):
                     st.session_state.log_history = []
-                
-                # Stream logs
                 try:
                     for log in stream_llm_logs():
-                        # Add new log to history
                         st.session_state.log_history.append(log)
-                        # Keep only last 100 logs
                         if len(st.session_state.log_history) > 100:
                             st.session_state.log_history.pop(0)
-                        
-                        # Display all logs in reverse order (newest first)
                         log_placeholder.code('\n'.join(reversed(st.session_state.log_history)))
-                        
                 except Exception as e:
                     st.error(f"Error streaming logs: {str(e)}")
                     st.info("Make sure LM Studio server is running on http://localhost:1234")

@@ -1013,7 +1013,6 @@ class DigitalChild:
                 'SENSORY': ['SHOW_COLORS', 'PLAY_SOUNDS', 'TEXTURE_PLAY', 'LIGHT_DARK'],
                 'DEVELOPMENTAL': ['CRAWLING_PRACTICE', 'WALKING_SUPPORT', 'FINE_MOTOR']
             }
-            # Add more stages as needed
         }
         
         # Get interactions for current stage
