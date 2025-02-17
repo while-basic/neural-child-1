@@ -406,16 +406,28 @@ class DigitalChild:
         # Ensure emotional_state is a dataclass instance, not a tensor
         if isinstance(self.emotional_state, torch.Tensor):
             # Convert tensor to EmotionalState if needed
-            self.emotional_state = EmotionalState(
-                happiness=float(self.emotional_state[0]),
-                sadness=float(self.emotional_state[1]),
-                anger=float(self.emotional_state[2]),
-                fear=float(self.emotional_state[3]),
-                surprise=float(self.emotional_state[4]),
-                disgust=float(self.emotional_state[5]),
-                trust=float(self.emotional_state[6]),
-                anticipation=float(self.emotional_state[7])
-            )
+            if self.emotional_state.size(0) == 4:  # Handle legacy 4-dimension tensors
+                self.emotional_state = EmotionalState(
+                    happiness=float(self.emotional_state[0]),
+                    sadness=float(self.emotional_state[1]),
+                    anger=float(self.emotional_state[2]),
+                    fear=float(self.emotional_state[3]),
+                    surprise=0.0,  # Default values for additional dimensions
+                    disgust=0.0,
+                    trust=0.5,
+                    anticipation=0.5
+                )
+            else:  # Handle full 8-dimension tensors
+                self.emotional_state = EmotionalState(
+                    happiness=float(self.emotional_state[0]),
+                    sadness=float(self.emotional_state[1]),
+                    anger=float(self.emotional_state[2]),
+                    fear=float(self.emotional_state[3]),
+                    surprise=float(self.emotional_state[4]) if self.emotional_state.size(0) > 4 else 0.0,
+                    disgust=float(self.emotional_state[5]) if self.emotional_state.size(0) > 5 else 0.0,
+                    trust=float(self.emotional_state[6]) if self.emotional_state.size(0) > 6 else 0.5,
+                    anticipation=float(self.emotional_state[7]) if self.emotional_state.size(0) > 7 else 0.5
+                )
         
         # Map emotions to expressions
         emotions = {

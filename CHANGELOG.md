@@ -80,6 +80,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed IndexError in EmotionalRegulation by properly handling all 8 dimensions
 - Added proper dimension padding with appropriate default values
 - Corrected baseline emotion initialization for all dimensions
+- Fixed emotional state dimension handling in express_feeling method
+- Added backward compatibility for legacy 4-dimension emotional states
+- Improved tensor to EmotionalState conversion with safe dimension checks
 
 ### Enhanced
 - Expanded emotional dimensions in EmotionalState to include trust, anticipation, and disgust
