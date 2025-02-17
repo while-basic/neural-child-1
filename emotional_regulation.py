@@ -17,74 +17,95 @@ class EmotionalMemory:
     valence: float  # -1 to 1, negative to positive
     arousal: float  # 0 to 1, low to high activation
 
+@dataclass
 class EmotionalState:
-    def __init__(self, device='cuda'):
-        self.device = device
-        # Use only 4 primary emotions: joy, trust, fear, surprise.
-        self.primary_emotions = nn.ParameterDict({
-            'joy': nn.Parameter(torch.tensor(0.0, device=device)),
-            'trust': nn.Parameter(torch.tensor(0.0, device=device)),
-            'fear': nn.Parameter(torch.tensor(0.0, device=device)),
-            'surprise': nn.Parameter(torch.tensor(0.0, device=device))
-        })
-        
-        self.complex_emotions = {
-            'love': {'joy': 0.6, 'trust': 0.4},
-            'guilt': {'fear': 0.5, 'surprise': 0.5},
-            'pride': {'joy': 0.7, 'fear': 0.3},
-            'shame': {'trust': 0.6, 'surprise': 0.4},
-            'anxiety': {'fear': 0.7, 'surprise': 0.3},
-            'contentment': {'joy': 0.5, 'trust': 0.5},
-            'rejection': {'fear': 0.4, 'surprise': 0.6},
-            'excitement': {'joy': 0.5, 'surprise': 0.5}
+    """Represents a complex emotional state with multiple dimensions and derived emotions."""
+    # Primary emotions (based on Plutchik's wheel)
+    happiness: float  # joy/ecstasy
+    sadness: float
+    anger: float
+    fear: float
+    surprise: float = 0.0
+    disgust: float = 0.0
+    trust: float = 0.5
+    anticipation: float = 0.5
+
+    def to_vector(self) -> List[float]:
+        """Convert emotional state to a vector representation."""
+        return [
+            self.happiness, self.sadness, self.anger, self.fear,
+            self.surprise, self.disgust, self.trust, self.anticipation
+        ]
+
+    @classmethod
+    def from_vector(cls, vector: List[float]) -> 'EmotionalState':
+        """Create an EmotionalState instance from a vector."""
+        return cls(
+            happiness=vector[0],
+            sadness=vector[1],
+            anger=vector[2],
+            fear=vector[3],
+            surprise=vector[4] if len(vector) > 4 else 0.0,
+            disgust=vector[5] if len(vector) > 5 else 0.0,
+            trust=vector[6] if len(vector) > 6 else 0.5,
+            anticipation=vector[7] if len(vector) > 7 else 0.5
+        )
+
+    def get_complex_emotions(self) -> Dict[str, float]:
+        """Calculate complex emotions based on combinations of primary emotions."""
+        return {
+            'love': min(1.0, (self.happiness + self.trust) / 2),
+            'submission': min(1.0, (self.trust + self.fear) / 2),
+            'awe': min(1.0, (self.fear + self.surprise) / 2),
+            'disappointment': min(1.0, (self.surprise + self.sadness) / 2),
+            'remorse': min(1.0, (self.sadness + self.disgust) / 2),
+            'contempt': min(1.0, (self.disgust + self.anger) / 2),
+            'aggressiveness': min(1.0, (self.anger + self.anticipation) / 2),
+            'optimism': min(1.0, (self.anticipation + self.happiness) / 2),
+            'guilt': min(1.0, (self.fear + self.sadness) / 2),
+            'curiosity': min(1.0, (self.anticipation + self.trust) / 2),
+            'pride': min(1.0, (self.happiness + self.anticipation) / 2),
+            'shame': min(1.0, (self.sadness + self.fear) / 2),
+            'anxiety': min(1.0, (self.fear + self.anticipation) / 2),
+            'contentment': min(1.0, (self.happiness + self.trust) / 2)
+        }
+
+    def get_dominant_emotions(self, threshold: float = 0.5) -> List[Tuple[str, float]]:
+        """Get the dominant emotions above a certain threshold."""
+        primary = {
+            'happiness': self.happiness,
+            'sadness': self.sadness,
+            'anger': self.anger,
+            'fear': self.fear,
+            'surprise': self.surprise,
+            'disgust': self.disgust,
+            'trust': self.trust,
+            'anticipation': self.anticipation
         }
         
-        self.stability_window = deque(maxlen=100)
-        self.baseline = {k: 0.5 for k in self.primary_emotions.keys()}
+        complex = self.get_complex_emotions()
+        all_emotions = {**primary, **complex}
         
-    def update(self, emotional_input: dict, learning_rate: float = 0.1) -> None:
-        for emotion, value in emotional_input.items():
-            if emotion in self.primary_emotions:
-                current = self.primary_emotions[emotion].item()
-                delta = (value - current) * learning_rate
-                noise = torch.randn(1, device=self.device).item() * 0.05
-                new_value = torch.clamp(current + delta + noise, 0.0, 1.0)
-                self.primary_emotions[emotion].data = torch.tensor(new_value, device=self.device)
-                
-        total_change = sum(abs(self.primary_emotions[k].item() - self.baseline[k]) for k in self.primary_emotions.keys())
-        self.stability_window.append(total_change)
-        
-    def get_complex_emotion(self, emotion_name: str) -> float:
-        if (emotion_name not in self.complex_emotions):
-            return 0.0
-        composition = self.complex_emotions[emotion_name]
-        intensity = sum(
-            self.primary_emotions[primary].item() * weight 
-            for primary, weight in composition.items()
-        )
-        return float(torch.clamp(torch.tensor(intensity), 0.0, 1.0))
-    
-    def get_dominant_emotion(self):
-        primary_intensities = {name: self.primary_emotions[name].item() for name in self.primary_emotions.keys()}
-        complex_intensities = {name: self.get_complex_emotion(name) for name in self.complex_emotions.keys()}
-        all_emotions = {**primary_intensities, **complex_intensities}
-        dominant = max(all_emotions.items(), key=lambda x: x[1])
-        return dominant
-    
-    def get_emotional_stability(self) -> float:
-        if not self.stability_window:
-            return 1.0
-        recent_volatility = sum(self.stability_window) / len(self.stability_window)
-        stability = 1.0 - min(recent_volatility, 1.0)
-        return float(stability)
-    
-    def to_tensor(self) -> torch.Tensor:
-        return torch.tensor([self.primary_emotions[emotion].item() for emotion in sorted(self.primary_emotions.keys())], device=self.device)
-    
-    def from_tensor(self, tensor: torch.Tensor) -> None:
-        sorted_emotions = sorted(self.primary_emotions.keys())
-        for i, emotion in enumerate(sorted_emotions):
-            self.primary_emotions[emotion].data = tensor[i]
+        dominant = [
+            (emotion, intensity) 
+            for emotion, intensity in all_emotions.items() 
+            if intensity >= threshold
+        ]
+        return sorted(dominant, key=lambda x: x[1], reverse=True)
+
+    def get_emotional_description(self) -> str:
+        """Generate a natural language description of the emotional state."""
+        dominant = self.get_dominant_emotions(threshold=0.6)
+        if not dominant:
+            return "feeling neutral"
+            
+        if len(dominant) == 1:
+            emotion, intensity = dominant[0]
+            intensity_word = "slightly " if intensity < 0.7 else "very " if intensity > 0.8 else ""
+            return f"feeling {intensity_word}{emotion}"
+            
+        emotions = [emotion for emotion, _ in dominant[:2]]
+        return f"feeling a mix of {emotions[0]} and {emotions[1]}"
 
 class EmotionalRegulation(nn.Module):
     """Advanced emotional regulation system with memory and context awareness."""
