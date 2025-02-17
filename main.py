@@ -357,8 +357,20 @@ class MotherLLM:
                 # Extract and process emotional context
                 emotional_context = response.get('emotional_context', {})
                 
-                # Convert tensor to EmotionalState if needed
-                if isinstance(emotional_context, torch.Tensor):
+                # Handle different emotional_context types
+                if isinstance(emotional_context, list):
+                    # Convert list to dictionary with proper handling of missing values
+                    emotional_context = {
+                        'happiness': float(emotional_context[0]) if len(emotional_context) > 0 else 0.5,
+                        'sadness': float(emotional_context[1]) if len(emotional_context) > 1 else 0.5,
+                        'anger': float(emotional_context[2]) if len(emotional_context) > 2 else 0.5,
+                        'fear': float(emotional_context[3]) if len(emotional_context) > 3 else 0.5,
+                        'surprise': float(emotional_context[4]) if len(emotional_context) > 4 else 0.5,
+                        'disgust': float(emotional_context[5]) if len(emotional_context) > 5 else 0.0,
+                        'trust': float(emotional_context[6]) if len(emotional_context) > 6 else 0.5,
+                        'anticipation': float(emotional_context[7]) if len(emotional_context) > 7 else 0.5
+                    }
+                elif isinstance(emotional_context, torch.Tensor):
                     emotional_state = EmotionalState(
                         happiness=float(emotional_context[0]),
                         sadness=float(emotional_context[1]),
@@ -552,7 +564,6 @@ class DigitalChild:
         self.warning_state = "GREEN"
         self.recent_warnings = []
         self.speed_multiplier = 1.0
-        self.speed_locked = False
         
         # Initialize acceleration metrics
         self.acceleration_metrics = {
@@ -720,7 +731,6 @@ class DigitalChild:
             self.warning_state = state_dict.get('warning_state', "GREEN")
             self.recent_warnings = state_dict.get('recent_warnings', [])
             self.speed_multiplier = float(state_dict.get('speed_multiplier', 1.0))
-            self.speed_locked = bool(state_dict.get('speed_locked', False))
             
             # Load interaction tracking state
             self.total_interactions = state_dict.get('total_interactions', 0)
@@ -750,7 +760,6 @@ class DigitalChild:
         self.warning_state = "GREEN"
         self.recent_warnings = []
         self.speed_multiplier = 1.0
-        self.speed_locked = False
         
         # Initialize interaction tracking
         self.total_interactions = 0
@@ -811,7 +820,6 @@ class DigitalChild:
             state_dict['warning_state'] = self.warning_state
             state_dict['recent_warnings'] = self.recent_warnings
             state_dict['speed_multiplier'] = self.speed_multiplier
-            state_dict['speed_locked'] = self.speed_locked
             
             # Save interaction tracking state
             state_dict['total_interactions'] = self.total_interactions
@@ -1040,41 +1048,35 @@ class DigitalChild:
                 'overstimulation_risk': 1.0 - float(metacog_metrics.get('stress_tolerance', 0.0))
             }
             
-            # Determine warning state
+            # Determine warning state with more lenient thresholds
             warning_state = "GREEN"
             warning_reasons = []
             
-            if metrics['emotional_stability'] < 0.3 or metrics['overstimulation_risk'] > 0.7:
+            if metrics['emotional_stability'] < 0.2 or metrics['overstimulation_risk'] > 0.8:
                 warning_state = "RED"
-                warning_reasons.append("Critical: Emotional stability low or overstimulation risk high")
-            elif metrics['emotional_stability'] < 0.6 or metrics['overstimulation_risk'] > 0.4:
+                warning_reasons.append("Notice: Emotional stability very low or overstimulation risk high")
+            elif metrics['emotional_stability'] < 0.4 or metrics['overstimulation_risk'] > 0.6:
                 warning_state = "YELLOW"
-                warning_reasons.append("Warning: Emotional stability or overstimulation risk concerning")
+                warning_reasons.append("Notice: Emotional stability or overstimulation risk needs attention")
             
-            if metrics['learning_efficiency'] < 0.4:
+            if metrics['learning_efficiency'] < 0.3:
                 warning_state = "RED"
-                warning_reasons.append("Critical: Learning efficiency severely impaired")
-            elif metrics['learning_efficiency'] < 0.6:
+                warning_reasons.append("Notice: Learning efficiency needs improvement")
+            elif metrics['learning_efficiency'] < 0.5:
                 warning_state = max(warning_state, "YELLOW")
-                warning_reasons.append("Warning: Learning efficiency below optimal")
+                warning_reasons.append("Notice: Learning efficiency could be enhanced")
             
-            if metrics['attention_level'] < 0.3:
+            if metrics['attention_level'] < 0.2:
                 warning_state = "RED"
-                warning_reasons.append("Critical: Attention level critically low")
-            elif metrics['attention_level'] < 0.6:
+                warning_reasons.append("Notice: Attention level needs focus")
+            elif metrics['attention_level'] < 0.4:
                 warning_state = max(warning_state, "YELLOW")
-                warning_reasons.append("Warning: Attention level below optimal")
+                warning_reasons.append("Notice: Attention level could be improved")
             
             # Calculate stage-appropriate speed limit
             base_limit = 5.0
             stage_complexity = stage_reqs['complexity_range'][1]  # Use upper bound
-            stage_limit = max(1.0, min(base_limit, base_limit * (1 - stage_complexity)))
-            
-            # Adjust speed limit based on warning state
-            if warning_state == "RED":
-                stage_limit = 1.0
-            elif warning_state == "YELLOW":
-                stage_limit = min(stage_limit, 3.0)
+            stage_limit = max(1.0, min(base_limit, base_limit * (1 - stage_complexity * 0.5)))
             
             # Get current speed multiplier
             speed_multiplier = getattr(self, 'speed_multiplier', 1.0)
@@ -1117,53 +1119,6 @@ class DigitalChild:
                 'stage_limit': 1.0,
                 'speed_multiplier': 1.0
             }
-            
-    def set_development_speed(self, speed: float) -> None:
-        """Set the development speed multiplier with safety checks.
-        
-        Args:
-            speed: New speed multiplier value (1.0 = normal speed)
-        """
-        # Check if speed is locked due to critical warnings
-        if self.speed_locked:
-            logger.warning("Speed locked at 1x due to critical warnings")
-            self.speed_multiplier = 1.0
-            return
-            
-        # Get current warning state
-        warning_indicators = self.get_warning_indicators()
-        
-        # Force speed to 1x if in RED warning state
-        if warning_indicators['warning_state'] == "RED":
-            logger.warning("Speed forced to 1x due to RED warning state")
-            self.speed_multiplier = 1.0
-            self.speed_locked = True
-            return
-            
-        # Get acceleration metrics for limits
-        metrics = self.get_acceleration_metrics()
-        max_safe = metrics['max_safe_multiplier']
-        
-        # Clamp speed between 1.0 and max_safe
-        self.speed_multiplier = max(1.0, min(speed, max_safe))
-        
-        if self.speed_multiplier != speed:
-            logger.info(f"Speed limited to {self.speed_multiplier}x for safety (requested: {speed}x)")
-        else:
-            logger.info(f"Development speed set to {self.speed_multiplier}x")
-            
-    def unlock_speed(self) -> bool:
-        """Attempt to unlock speed control after being locked.
-        
-        Returns:
-            bool: True if successfully unlocked, False if still in critical state
-        """
-        warning_indicators = self.get_warning_indicators()
-        if warning_indicators['warning_state'] != "RED":
-            self.speed_locked = False
-            logger.info("Speed control unlocked")
-            return True
-        return False
 
     def get_acceleration_metrics(self) -> Dict[str, float]:
         """Get current acceleration metrics and limits.

@@ -2031,26 +2031,47 @@ def render_interaction_controls():
             # Add perform interaction button
             if st.button("✨ Perform Interaction", key="perform_selected_interaction", use_container_width=True):
                 try:
+                    # Verify session state
+                    if not hasattr(st.session_state, 'child') or not hasattr(st.session_state, 'mother'):
+                        st.error("Session state not properly initialized. Please refresh the page.")
+                        return
+                    
                     # Update speed lock if override is enabled
                     if override_speed_lock:
                         st.session_state.child.speed_locked = False
                     
-                    # Perform the interaction
-                    response, emotional_state = st.session_state.mother.perform_interaction(
-                        st.session_state.child,
-                        st.session_state.selected_interaction_category,
-                        st.session_state.selected_specific_interaction
-                    )
+                    # Verify interaction is still valid
+                    available_interactions = st.session_state.child.get_available_interactions()
+                    if (st.session_state.selected_interaction_category not in available_interactions or 
+                        st.session_state.selected_specific_interaction not in 
+                        available_interactions[st.session_state.selected_interaction_category]):
+                        st.error("Selected interaction is no longer valid for the current developmental stage.")
+                        return
+                    
+                    # Show loading state
+                    with st.spinner("Performing interaction..."):
+                        # Perform the interaction
+                        response, emotional_state = st.session_state.mother.perform_interaction(
+                            st.session_state.child,
+                            st.session_state.selected_interaction_category,
+                            st.session_state.selected_specific_interaction
+                        )
                     
                     # Set flag to maintain tab selection
                     st.session_state.interaction_performed = True
                     st.session_state.selected_tab = "Interaction Controls"
                     
-                    # Display response
-                    st.success("Interaction performed successfully!")
-                    st.write("**Mother's Response:**", response)
+                    # Display response with proper formatting
+                    st.success("✨ Interaction performed successfully!")
+                    st.markdown(f"""
+                    **Mother's Response:**  
+                    {response}
                     
-                    # Update conversation history
+                    **Emotional State:**  
+                    {emotional_state.get_emotional_description()}
+                    """)
+                    
+                    # Update conversation history with full context
                     st.session_state.conversation_history.append({
                         'type': 'interaction',
                         'category': st.session_state.selected_interaction_category,
@@ -2060,14 +2081,25 @@ def render_interaction_controls():
                         'timestamp': datetime.now()
                     })
                     
+                    # Save state after successful interaction
+                    try:
+                        st.session_state.child.save_state()
+                    except Exception as save_error:
+                        st.warning(f"Warning: Could not save state after interaction: {str(save_error)}")
+                    
                     # Clear selection after successful interaction
                     st.session_state.selected_interaction_category = None
                     st.session_state.selected_specific_interaction = None
                     
+                    # Force refresh to update UI
+                    st.experimental_rerun()
+                    
                 except Exception as e:
                     st.error(f"Error performing interaction: {str(e)}")
-                    if debug_mode:
+                    if st.session_state.get('debug_mode', False):
                         st.exception(e)
+                    # Log the error
+                    logger.error(f"Interaction error: {str(e)}", exc_info=True)
     
     # Add help section at the bottom
     with st.expander("💡 How to Interact", expanded=False):
