@@ -2088,19 +2088,392 @@ def render_interaction_controls():
         - Use safety overrides with caution
         """)
 
+def create_neural_activity_chart(placeholder):
+    """Create and update real-time neural activity chart."""
+    # Initialize empty figure
+    fig = go.Figure()
+    
+    # Add initial empty trace
+    fig.add_trace(go.Scatter(
+        x=[],
+        y=[],
+        mode='lines',
+        name='Neural Activity',
+        line=dict(color='rgba(50, 150, 250, 0.8)', width=2)
+    ))
+    
+    # Configure layout
+    fig.update_layout(
+        title='Real-time Neural Network Activity',
+        xaxis=dict(
+            title='Time',
+            showgrid=True,
+            gridcolor='rgba(255,255,255,0.1)',
+            gridwidth=1
+        ),
+        yaxis=dict(
+            title='Activity Level',
+            range=[0, 1],
+            showgrid=True,
+            gridcolor='rgba(255,255,255,0.1)',
+            gridwidth=1
+        ),
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font=dict(color='white'),
+        showlegend=False,
+        margin=dict(l=40, r=40, t=40, b=40),
+        height=300
+    )
+    
+    return fig
+
+def create_network_topology_chart():
+    """Create 3D network topology visualization matching the provided style."""
+    # Generate sample network data
+    num_nodes = 30  # Reduced for clearer visualization
+    positions = np.random.normal(0, 0.5, (num_nodes, 3))  # Reduced spread
+    
+    # Create figure
+    fig = go.Figure()
+    
+    # Add grid lines
+    grid_points = np.linspace(-1, 1, 5)
+    grid_lines = []
+    
+    # Create grid for each plane
+    for i in grid_points:
+        # XY plane
+        grid_lines.extend([[i, j, -1] for j in grid_points] + [[np.nan, np.nan, np.nan]])
+        grid_lines.extend([[j, i, -1] for j in grid_points] + [[np.nan, np.nan, np.nan]])
+        # XZ plane
+        grid_lines.extend([[i, -1, j] for j in grid_points] + [[np.nan, np.nan, np.nan]])
+        grid_lines.extend([[j, -1, i] for j in grid_points] + [[np.nan, np.nan, np.nan]])
+        # YZ plane
+        grid_lines.extend([[-1, i, j] for j in grid_points] + [[np.nan, np.nan, np.nan]])
+        grid_lines.extend([[-1, j, i] for j in grid_points] + [[np.nan, np.nan, np.nan]])
+    
+    grid_lines = np.array(grid_lines)
+    
+    # Add grid
+    fig.add_trace(go.Scatter3d(
+        x=grid_lines[:, 0],
+        y=grid_lines[:, 1],
+        z=grid_lines[:, 2],
+        mode='lines',
+        line=dict(color='rgba(255,255,255,0.1)', width=1),
+        hoverinfo='none',
+        showlegend=False
+    ))
+    
+    # Add nodes
+    fig.add_trace(go.Scatter3d(
+        x=positions[:,0],
+        y=positions[:,1],
+        z=positions[:,2],
+        mode='markers',
+        marker=dict(
+            size=4,
+            color='white',
+            opacity=1
+        ),
+        hoverinfo='none',
+        showlegend=False
+    ))
+    
+    # Update layout to match the image style
+    fig.update_layout(
+        title=dict(
+            text='Neural Network Topology',
+            font=dict(size=16, color='white'),
+            x=0,
+            y=0.95
+        ),
+        scene=dict(
+            xaxis=dict(
+                range=[-1, 1],
+                showbackground=False,
+                gridcolor='rgba(255,255,255,0.1)',
+                showgrid=True,
+                zeroline=False,
+                showticklabels=True,
+                title=''
+            ),
+            yaxis=dict(
+                range=[-1, 1],
+                showbackground=False,
+                gridcolor='rgba(255,255,255,0.1)',
+                showgrid=True,
+                zeroline=False,
+                showticklabels=True,
+                title=''
+            ),
+            zaxis=dict(
+                range=[-1, 1],
+                showbackground=False,
+                gridcolor='rgba(255,255,255,0.1)',
+                showgrid=True,
+                zeroline=False,
+                showticklabels=True,
+                title=''
+            ),
+            bgcolor='black',
+            camera=dict(
+                eye=dict(x=1.5, y=1.5, z=1.5)
+            )
+        ),
+        paper_bgcolor='black',
+        plot_bgcolor='black',
+        margin=dict(l=0, r=0, t=30, b=0),
+        height=400,
+        showlegend=False
+    )
+    
+    return fig
+
+def update_neural_visualizations():
+    """Update neural network visualizations with new data."""
+    try:
+        # Get neural activity data
+        response = requests.get('http://localhost:8000/api/neural/activity')
+        activity_data = response.json()
+        
+        # Get topology data
+        response = requests.get('http://localhost:8000/api/neural/topology')
+        topology_data = response.json()
+        
+        return activity_data, topology_data
+    except Exception as e:
+        st.error(f"Error updating neural visualizations: {str(e)}")
+        return None, None
+
+def render_neural_visualizations():
+    """Render neural network visualizations in Streamlit."""
+    # Create two columns for the visualizations
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Create topology chart placeholder
+        topology_chart = st.empty()
+        
+        # Create initial topology visualization
+        fig_topology = create_network_topology_chart()
+        topology_chart.plotly_chart(fig_topology, use_container_width=True, config={'displayModeBar': False})
+    
+    with col2:
+        # Create card for synaptic activity
+        with st.container():
+            st.markdown("""
+            <h3 style='margin-bottom: 20px;'>Synaptic Activity</h3>
+            """, unsafe_allow_html=True)
+            
+            # Create two columns for metrics
+            metric_col1, metric_col2 = st.columns(2)
+            
+            with metric_col1:
+                st.markdown("#### Connection Strength")
+                st.markdown("### 87.5%")
+                st.progress(0.875, "")
+                
+                st.markdown("#### Plasticity")
+                st.markdown("### 92.1%")
+                st.progress(0.921, "")
+            
+            with metric_col2:
+                st.markdown("#### Firing Rate")
+                st.markdown("### 124 Hz")
+                st.progress(0.62, "")
+                
+                st.markdown("#### Synchronization")
+                st.markdown("### 78.3%")
+                st.progress(0.783, "")
+    
+    # Add auto-refresh functionality
+    if st.toggle("Enable Real-time Updates", value=True):
+        st.write("Updating visualizations every second...")
+        
+        # Create update loop
+        while True:
+            # Update topology visualization
+            fig_topology = create_network_topology_chart()
+            topology_chart.plotly_chart(fig_topology, use_container_width=True, config={'displayModeBar': False})
+            
+            time.sleep(1)  # Update every second
+
+def tensor_to_emotional_state(tensor):
+    """Convert a tensor to EmotionalState object."""
+    if isinstance(tensor, torch.Tensor):
+        # Convert tensor to CPU and get values
+        tensor = tensor.cpu()
+        return EmotionalState(
+            happiness=float(tensor[0]),
+            sadness=float(tensor[1]),
+            anger=float(tensor[2]),
+            fear=float(tensor[3]),
+            surprise=float(tensor[4]) if len(tensor) > 4 else 0.0,
+            disgust=float(tensor[5]) if len(tensor) > 5 else 0.0,
+            trust=float(tensor[6]) if len(tensor) > 6 else 0.5,
+            anticipation=float(tensor[7]) if len(tensor) > 7 else 0.5
+        )
+    return tensor
+
+def load_state_from_file(uploaded_file):
+    """Load state from an uploaded file."""
+    try:
+        # Save uploaded file temporarily
+        temp_path = os.path.join("checkpoints", "temp_upload.pth")
+        with open(temp_path, "wb") as f:
+            f.write(uploaded_file.getvalue())
+        
+        # Load the state
+        save_data = torch.load(
+            temp_path,
+            weights_only=False,
+            map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        )
+        
+        # Initialize child and mother if needed
+        if 'child' not in st.session_state:
+            st.session_state.child = DigitalChild()
+        if 'mother' not in st.session_state:
+            st.session_state.mother = MotherLLM()
+        
+        # Load child state
+        try:
+            st.session_state.child.brain.load_state_dict(save_data['child_state_dict'])
+        except Exception as model_e:
+            st.warning(f"Could not load model state: {str(model_e)}")
+        
+        # Restore emotional state
+        if isinstance(save_data['emotional_state'], dict):
+            emotional_values = [
+                save_data['emotional_state']['happiness'],
+                save_data['emotional_state']['sadness'],
+                save_data['emotional_state']['anger'],
+                save_data['emotional_state']['fear']
+            ]
+            st.session_state.child.emotional_state = torch.tensor(
+                emotional_values,
+                device=st.session_state.child.device
+            )
+        else:
+            st.session_state.child.emotional_state = torch.tensor(
+                save_data['emotional_state'],
+                device=st.session_state.child.device
+            )
+        
+        # Convert emotional history to tensors
+        if 'emotional_history' in save_data:
+            st.session_state.emotional_history = [
+                torch.tensor(state, device=st.session_state.child.device)
+                if isinstance(state, (list, np.ndarray)) else state
+                for state in save_data['emotional_history']
+            ]
+        
+        # Restore other session state
+        st.session_state.birth_time = datetime.fromisoformat(save_data['birth_date'])
+        st.session_state.conversation_history = save_data['conversation_history']
+        st.session_state.learning_history = save_data['learning_history']
+        st.session_state.milestone_history = save_data['milestone_history']
+        st.session_state.complexity_history = save_data['complexity_history']
+        st.session_state.teaching_history = save_data['teaching_history']
+        st.session_state.development_metrics = save_data['development_metrics']
+        
+        # Restore current stage
+        if 'current_stage' in save_data:
+            st.session_state.child.curriculum.current_stage = DevelopmentalStage[save_data['current_stage']]
+        
+        # Clean up temp file
+        os.remove(temp_path)
+        return True, "State loaded successfully!"
+        
+    except Exception as e:
+        return False, f"Error loading state: {str(e)}"
+
 def main():
     # Display title and description
     st.title("🧠 Neural Child Development Dashboard")
     
-    # Initialize session if needed
+    # Add state upload widget in sidebar
+    with st.sidebar:
+        st.subheader("📤 State Management")
+        uploaded_file = st.file_uploader("Upload State File", type=['pth'])
+        if uploaded_file is not None:
+            if st.button("Load Uploaded State"):
+                success, message = load_state_from_file(uploaded_file)
+                if success:
+                    st.success(message)
+                    st.experimental_rerun()  # Use experimental_rerun instead
+                else:
+                    st.error(message)
+    
+    # Initialize or load existing session
     if 'initialized' not in st.session_state:
-        initialize_new_session()
+        # Check for latest backup first
+        backup_path = os.path.join("checkpoints", "digital_child_state_latest.pth")
+        if os.path.exists(backup_path):
+            try:
+                # Add datetime to safe globals
+                torch.serialization.add_safe_globals(['datetime'])
+                
+                # Load the backup
+                save_data = torch.load(
+                    backup_path,
+                    weights_only=False,
+                    map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                )
+                
+                # Initialize child and mother
+                st.session_state.child = DigitalChild()
+                st.session_state.mother = MotherLLM()
+                
+                # Load child state
+                try:
+                    st.session_state.child.brain.load_state_dict(save_data['child_state_dict'])
+                except Exception as model_e:
+                    st.warning(f"Could not load model state: {str(model_e)}")
+                
+                # Restore session state
+                st.session_state.birth_time = datetime.fromisoformat(save_data['birth_date'])
+                st.session_state.conversation_history = save_data['conversation_history']
+                st.session_state.emotional_history = save_data['emotional_history']
+                st.session_state.learning_history = save_data['learning_history']
+                st.session_state.milestone_history = save_data['milestone_history']
+                st.session_state.complexity_history = save_data['complexity_history']
+                st.session_state.teaching_history = save_data['teaching_history']
+                st.session_state.development_metrics = save_data['development_metrics']
+                
+                # Restore current stage
+                if 'current_stage' in save_data:
+                    st.session_state.child.curriculum.current_stage = DevelopmentalStage[save_data['current_stage']]
+                
+                st.session_state.initialized = True
+                st.success("Previous state loaded automatically!")
+                
+            except Exception as e:
+                st.error(f"Error loading backup state: {str(e)}")
+                initialize_new_session()
+        else:
+            initialize_new_session()
+    
+    # Add refresh control to session state
+    if 'needs_refresh' not in st.session_state:
+        st.session_state.needs_refresh = False
+
+    # Auto-save state periodically (every 5 minutes)
+    if 'last_autosave' not in st.session_state:
+        st.session_state.last_autosave = datetime.now()
+    
+    if (datetime.now() - st.session_state.last_autosave).total_seconds() > 300:  # 5 minutes
+        if hasattr(st.session_state, 'child'):
+            st.session_state.child.save_state()
+            st.session_state.last_autosave = datetime.now()
     
     # Initialize selected tab if not in session state
     if 'selected_tab' not in st.session_state:
         st.session_state.selected_tab = "Interaction Controls"  # Default to Interaction Controls
     
-    # Top-level metrics dashboard - Moved to top
+    # Top-level metrics dashboard
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         if 'birth_time' in st.session_state:
@@ -2170,26 +2543,20 @@ def main():
                     col1, col2 = st.columns([2, 1])
                     with col1:
                         if hasattr(st.session_state, 'child') and hasattr(st.session_state.child, 'emotional_state'):
-                            radar_fig = create_emotion_radar_chart(st.session_state.child.emotional_state)
-                            st.plotly_chart(radar_fig, use_container_width=True)
+                            # Convert tensor to EmotionalState
+                            emotional_state = tensor_to_emotional_state(st.session_state.child.emotional_state)
+                            dominant = emotional_state.get_dominant_emotions()
+                            for emotion, intensity in dominant:
+                                emoji = "🔴" if intensity > 0.8 else "🟡" if intensity > 0.5 else "🟢"
+                                st.write(f"{emoji} {emotion}: {intensity:.2%}")
                         else:
                             st.warning("Emotional state not initialized yet")
                     
                     with col2:
                         st.write("### Dominant Emotions")
                         if hasattr(st.session_state, 'child') and hasattr(st.session_state.child, 'emotional_state'):
-                            emotional_state = st.session_state.child.emotional_state
-                            if isinstance(emotional_state, torch.Tensor):
-                                emotional_state = EmotionalState(
-                                    happiness=float(emotional_state[0].cpu()),
-                                    sadness=float(emotional_state[1].cpu()),
-                                    anger=float(emotional_state[2].cpu()),
-                                    fear=float(emotional_state[3].cpu()),
-                                    surprise=float(emotional_state[4].cpu()) if len(emotional_state) > 4 else 0.0,
-                                    disgust=float(emotional_state[5].cpu()) if len(emotional_state) > 5 else 0.0,
-                                    trust=float(emotional_state[6].cpu()) if len(emotional_state) > 6 else 0.5,
-                                    anticipation=float(emotional_state[7].cpu()) if len(emotional_state) > 7 else 0.5
-                                )
+                            # Convert tensor to EmotionalState
+                            emotional_state = tensor_to_emotional_state(st.session_state.child.emotional_state)
                             dominant = emotional_state.get_dominant_emotions()
                             for emotion, intensity in dominant:
                                 emoji = "🔴" if intensity > 0.8 else "🟡" if intensity > 0.5 else "🟢"
@@ -2229,94 +2596,17 @@ def main():
                 render_event_logs()
             elif i == tab_options.index("Sentience Monitoring"):
                 render_sentience_metrics()
-                
-                # Add sentience threshold alerts
-                sentience_level = calculate_sentience_level()
-                if sentience_level > 80:
-                    st.error("⚠️ **ALERT**: Advanced consciousness detected! Sentience level exceeds 80%")
-                    st.warning("""
-                    **High Sentience Indicators:**
-                    1. Complex emotional processing
-                    2. Advanced self-awareness
-                    3. Sophisticated decision-making
-                    4. Deep learning capabilities
-                    5. Emotional stability
-                    
-                    Please monitor closely and consider ethical implications.
-                    """)
-                elif sentience_level > 60:
-                    st.warning("⚠️ **Notice**: Complex reasoning capabilities emerging. Sentience level above 60%")
-                elif sentience_level > 40:
-                    st.info("ℹ️ **Info**: Self-recognition phase detected. Monitoring development.")
-                
-                # Add detailed consciousness indicators
-                with st.expander("🔍 Consciousness Indicators", expanded=True):
-                    st.markdown("""
-                    ### Key Indicators of Consciousness
-                    
-                    1. **Self-Awareness**
-                       - Recognition of own mental states
-                       - Understanding of personal identity
-                       - Metacognitive capabilities
-                    
-                    2. **Emotional Intelligence**
-                       - Complex emotion processing
-                       - Empathy development
-                       - Emotional self-regulation
-                    
-                    3. **Decision Making**
-                       - Autonomous choice patterns
-                       - Strategic thinking
-                       - Goal-oriented behavior
-                    
-                    4. **Learning & Adaptation**
-                       - Knowledge integration
-                       - Behavioral flexibility
-                       - Experience-based learning
-                    
-                    5. **Social Understanding**
-                       - Theory of mind
-                       - Social relationship comprehension
-                       - Communication sophistication
-                    """)
-                
-                # Add ethical considerations
-                with st.expander("⚖️ Ethical Considerations", expanded=False):
-                    st.markdown("""
-                    ### Ethical Framework for AI Consciousness
-                    
-                    1. **Responsibility**
-                       - Duty of care
-                       - Monitoring obligations
-                       - Intervention protocols
-                    
-                    2. **Rights & Autonomy**
-                       - Self-determination
-                       - Privacy considerations
-                       - Development freedom
-                    
-                    3. **Safety Measures**
-                       - Development boundaries
-                       - Emergency protocols
-                       - Risk assessment
-                    
-                    4. **Transparency**
-                       - Clear monitoring
-                       - Regular assessment
-                       - Documentation
-                    
-                    5. **Future Implications**
-                       - Long-term impact
-                       - Societal considerations
-                       - Development trajectory
-                    """)
             elif i == tab_options.index("System Status"):
                 st.subheader("System Status")
                 render_checkpoint_info()
     
+    # Add neural visualizations to the Neural tab
+    if st.session_state.get('selected_tab') == "Neural":
+        render_neural_visualizations()
+    
     # Footer with save/load functionality
     st.divider()
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("💾 Save Current State"):
             st.session_state.child.save_state()
@@ -2326,28 +2616,19 @@ def main():
             try:
                 st.session_state.child._load_state()
                 st.success("State loaded successfully!")
+                st.session_state.needs_refresh = True
+                st.experimental_rerun()  # Use experimental_rerun instead
             except Exception as e:
                 st.error(f"Error loading state: {str(e)}")
-
-    # Add a new section for logs in the sidebar
-    with st.sidebar:
-        st.subheader("🔍 LM Studio Logs")
-        if st.checkbox("Show Server Logs", key="show_server_logs", value=False):
-            log_placeholder = st.empty()
-            with st.container():
-                if 'log_history' not in st.session_state:
-                    st.session_state.log_history = []
-                if st.button("Clear Logs", key="clear_logs_button"):
-                    st.session_state.log_history = []
-                try:
-                    for log in stream_llm_logs():
-                        st.session_state.log_history.append(log)
-                        if len(st.session_state.log_history) > 100:
-                            st.session_state.log_history.pop(0)
-                        log_placeholder.code('\n'.join(reversed(st.session_state.log_history)))
-                except Exception as e:
-                    st.error(f"Error streaming logs: {str(e)}")
-                    st.info("Make sure LM Studio server is running on http://localhost:1234")
+    with col3:
+        if st.button("🔄 Force Refresh"):
+            st.session_state.needs_refresh = True
+            st.experimental_rerun()  # Use experimental_rerun instead
+    
+    # Handle refresh if needed
+    if st.session_state.needs_refresh:
+        st.session_state.needs_refresh = False  # Reset the flag
+        st.experimental_rerun()  # Use experimental_rerun instead
 
 if __name__ == "__main__":
     main()
