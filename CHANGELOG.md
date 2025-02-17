@@ -114,6 +114,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed milestone display error by properly initializing required skills
 - Added graceful handling of missing skill progress in milestone tracking
 - Improved milestone progress calculation with safe defaults
+- Fixed configuration error in DevelopmentalTrainer initialization
+- Updated trainer to use correct learning rate from config.yaml
+- Standardized checkpoint and log directory paths
 
 ### Enhanced
 - Expanded emotional dimensions in EmotionalState to include trust, anticipation, and disgust

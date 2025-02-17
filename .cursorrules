@@ -2,7 +2,6 @@
 Always refer to the user as Dr. Celaya before speaking.
 Always update the changelog when pushing to git. 
 Check the source code for errors before pushing to git.
-
 # Code Quality
 All new code must include docstrings, elaborate comments, and type hints.
 Maximum line length is 100 characters.
@@ -13,6 +12,7 @@ No commented-out code allowed in commits.
 All TODO comments must include a JIRA ticket number.
 
 # Git Management
+Do not push to git automatically unless asked to do so.
 Commit messages must follow conventional commits format.
 No direct commits to main branch.
 All feature branches must be prefixed with 'feature/'.
