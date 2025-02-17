@@ -34,8 +34,18 @@ class CustomTransformerEncoder(nn.TransformerEncoder):
 class AttachmentSystem(nn.Module):
     def __init__(self, input_dim: int = 384, hidden_dim: int = 256):
         super().__init__()
-        self.attachment_network = nn.Sequential(
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        
+        # Add input projection for dimension mismatch
+        self.input_projection = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.LayerNorm(hidden_dim)
+        )
+        
+        self.attachment_network = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
@@ -44,6 +54,10 @@ class AttachmentSystem(nn.Module):
         self.attachment_styles = nn.Parameter(torch.ones(4) / 4)  # Initialize with equal weights
         
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        # Handle input dimension
+        if x.size(-1) != self.hidden_dim:
+            x = self.input_projection(x)
+            
         attachment_scores = self.attachment_network(x)
         attachment_weights = torch.softmax(attachment_scores, dim=-1)
         self.attachment_styles.data = 0.95 * self.attachment_styles.data + 0.05 * attachment_weights.mean(0)
@@ -53,16 +67,30 @@ class AttachmentSystem(nn.Module):
         }
 
 class DefenseMechanisms(nn.Module):
-    def __init__(self, input_dim: int = 384):
+    def __init__(self, input_dim: int = 384, hidden_dim: int = 256):
         super().__init__()
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        
+        # Add input projection for dimension mismatch
+        self.input_projection = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.LayerNorm(hidden_dim)
+        )
+        
         self.anxiety_threshold = nn.Parameter(torch.tensor(0.5))
         self.defense_network = nn.Sequential(
-            nn.Linear(input_dim, input_dim // 2),
+            nn.Linear(hidden_dim, hidden_dim // 2),
             nn.ReLU(),
-            nn.Linear(input_dim // 2, input_dim)
+            nn.Linear(hidden_dim // 2, hidden_dim)
         )
         
     def forward(self, x: torch.Tensor, anxiety_level: float) -> torch.Tensor:
+        # Handle input dimension
+        if x.size(-1) != self.hidden_dim:
+            x = self.input_projection(x)
+            
         if anxiety_level > self.anxiety_threshold:
             return self.defense_network(x)
         return x
@@ -70,18 +98,44 @@ class DefenseMechanisms(nn.Module):
 class TheoryOfMind(nn.Module):
     def __init__(self, input_dim: int = 384, hidden_dim: int = 256):
         super().__init__()
-        self.perspective_network = nn.Sequential(
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        
+        # Add input projection for dimension mismatch
+        self.input_projection = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
+            nn.ReLU(),
+            nn.LayerNorm(hidden_dim)
+        )
+        
+        self.perspective_network = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, input_dim)
+            nn.Linear(hidden_dim, hidden_dim)
         )
-        self.social_bias = nn.Parameter(torch.zeros(input_dim))
+        self.social_bias = nn.Parameter(torch.zeros(hidden_dim))
+        
+        # Add output projection to match input dimension
+        self.output_projection = nn.Sequential(
+            nn.Linear(hidden_dim, input_dim),
+            nn.LayerNorm(input_dim)
+        )
         
     def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        # Handle input dimension
+        if x.size(-1) != self.hidden_dim:
+            x = self.input_projection(x)
+            
         perspective = self.perspective_network(x)
         social_context = perspective + self.social_bias
+        
+        # Project back to input dimension if needed
+        if self.input_dim != self.hidden_dim:
+            perspective = self.output_projection(perspective)
+            social_context = self.output_projection(social_context)
+            
         return {
             'perspective': perspective,
             'social_context': social_context
@@ -94,10 +148,19 @@ class DynamicNeuralChild(nn.Module):
                  device: Optional[torch.device] = None):
         super().__init__()
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        
+        # Input projection layer to handle dimension mismatch
+        self.input_projection = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU()
+        )
         
         # Core neural architecture
         self.encoder = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
             nn.GELU(),
             nn.Linear(hidden_dim, hidden_dim)
@@ -116,12 +179,12 @@ class DynamicNeuralChild(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
             nn.GELU(),
-            nn.Linear(hidden_dim, input_dim)
+            nn.Linear(hidden_dim, input_dim)  # Project back to input dimension
         )
         
         # Psychological components
         self.attachment = AttachmentSystem(input_dim, hidden_dim)
-        self.defense_mechanisms = DefenseMechanisms(input_dim)
+        self.defense_mechanisms = DefenseMechanisms(input_dim, hidden_dim)
         self.theory_of_mind = TheoryOfMind(input_dim, hidden_dim)
         
         # Developmental parameters
@@ -135,6 +198,10 @@ class DynamicNeuralChild(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         # Ensure input is on the correct device
         x = x.to(self.device)
+        
+        # Handle input dimension
+        if x.size(-1) != self.hidden_dim:
+            x = self.input_projection(x)
         
         # Basic encoding
         encoded = self.encoder(x)
@@ -188,3 +255,27 @@ class DynamicNeuralChild(nn.Module):
             'anxiety_threshold': self.defense_mechanisms.anxiety_threshold.item(),
             'social_bias': torch.mean(self.theory_of_mind.social_bias).item()
         }
+
+    def load_state_dict(self, state_dict: Dict[str, torch.Tensor], strict: bool = True):
+        """Custom state dict loading to handle architecture changes"""
+        try:
+            # Try loading with strict mode first
+            super().load_state_dict(state_dict, strict=True)
+        except Exception as e:
+            print(f"Warning: Strict loading failed ({str(e)}), attempting flexible loading...")
+            
+            # Create new state dict with only matching keys
+            model_state = self.state_dict()
+            flexible_state = {}
+            
+            for key in model_state.keys():
+                if key in state_dict:
+                    # Check if shapes match
+                    if state_dict[key].shape == model_state[key].shape:
+                        flexible_state[key] = state_dict[key]
+                    else:
+                        print(f"Shape mismatch for {key}: expected {model_state[key].shape}, got {state_dict[key].shape}")
+            
+            # Load only matching parameters
+            super().load_state_dict(flexible_state, strict=False)
+            print("Flexible loading completed with partial state restoration")
