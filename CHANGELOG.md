@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enhanced feedback processing with text encoding
   - Added periodic reflection on experiences
   - Improved learning regulation with metacognitive state consideration
+- Added get_learning_rate method to AutonomousLearner for learning rate access
 
 ### Changed
 - Refactored main.py for better modularity and maintainability

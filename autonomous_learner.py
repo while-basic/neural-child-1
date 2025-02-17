@@ -16,6 +16,14 @@ class AutonomousLearner:
         self.exploration_decay = 0.995
         self.min_exploration = 0.05
         
+    def get_learning_rate(self) -> float:
+        """Get the current learning rate.
+        
+        Returns:
+            The current learning rate value.
+        """
+        return self.learning_parameters['learning_rate']
+
     def learn_independently(self) -> Dict[str, float]:
         """Execute one cycle of autonomous learning"""
         try:
