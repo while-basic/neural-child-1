@@ -363,13 +363,21 @@ def create_emotion_radar_chart(emotional_state):
 
 def calculate_emotional_stability():
     """Calculate emotional stability percentage"""
+    if not hasattr(st.session_state, 'emotional_history'):
+        st.session_state.emotional_history = []
+    
     if not st.session_state.emotional_history:
         return 0.0
     
     recent_states = st.session_state.emotional_history[-10:]
+    if len(recent_states) < 2:
+        return 0.0
+    
     variations = []
     for i in range(1, len(recent_states)):
-        variation = np.mean(np.abs(np.array(recent_states[i]) - np.array(recent_states[i-1])))
+        curr_state = np.array(recent_states[i].to_vector())
+        prev_state = np.array(recent_states[i-1].to_vector())
+        variation = np.mean(np.abs(curr_state - prev_state))
         variations.append(variation)
     
     stability = 100 * (1 - np.mean(variations))
@@ -805,39 +813,76 @@ def calculate_sentience_level():
         
     child = st.session_state.child
     
-    # Convert EmotionalState to numpy array directly
+    # Calculate emotional complexity (0-1)
     emotional_state = np.array([
         child.emotional_state.happiness,
         child.emotional_state.sadness,
         child.emotional_state.anger,
-        child.emotional_state.fear
+        child.emotional_state.fear,
+        child.emotional_state.surprise,
+        child.emotional_state.disgust,
+        child.emotional_state.trust,
+        child.emotional_state.anticipation
     ])
-    
-    # Calculate emotional complexity (0-1)
-    emotional_complexity = np.std(emotional_state)  # Higher variance = more complex emotions
+    # Use both variance and number of active emotions for complexity
+    emotion_variance = np.std(emotional_state)
+    active_emotions = np.sum(emotional_state > 0.2) / len(emotional_state)
+    emotional_complexity = (emotion_variance + active_emotions) / 2
     
     # Calculate self-awareness (0-1)
-    if st.session_state.development_metrics['self_awareness']:
-        self_awareness = np.mean(st.session_state.development_metrics['self_awareness'][-10:])
-    else:
-        self_awareness = 0.0
+    metacog_metrics = child.metacognition.get_metrics()
+    self_awareness = metacog_metrics.get('self_awareness', 0.0)
     
     # Calculate decision autonomy (0-1)
-    if hasattr(child, 'decision_history') and child.decision_history:
-        recent_decisions = child.decision_history[-20:]
-        decision_autonomy = len(set(recent_decisions)) / len(recent_decisions)  # Measure of decision variety
-    else:
-        decision_autonomy = 0.0
+    if not hasattr(st.session_state, 'decision_history'):
+        st.session_state.decision_history = []
+    recent_decisions = st.session_state.decision_history[-20:] if st.session_state.decision_history else []
+    decision_autonomy = len(set(recent_decisions)) / max(len(recent_decisions), 1)
     
     # Calculate learning adaptability (0-1)
+    if not hasattr(st.session_state, 'learning_history'):
+        st.session_state.learning_history = []
     learning_progress = len(st.session_state.learning_history)
-    learning_adaptability = min(1.0, learning_progress / 100)
+    learning_rate = child.autonomous_learner.get_learning_rate()
+    learning_adaptability = min(1.0, (learning_progress / 100) * learning_rate)
     
     # Calculate cognitive complexity (0-1)
     cognitive_complexity = calculate_complexity_level() / 100
     
     # Calculate emotional stability (0-1)
+    if not hasattr(st.session_state, 'emotional_history'):
+        st.session_state.emotional_history = []
     emotional_stability = calculate_emotional_stability() / 100
+    
+    # Initialize development metrics if not present
+    if 'development_metrics' not in st.session_state:
+        st.session_state.development_metrics = {
+            'emotional_complexity': [],
+            'self_awareness': [],
+            'decision_autonomy': [],
+            'learning_adaptability': [],
+            'cognitive_complexity': [],
+            'emotional_stability': []
+        }
+    
+    # Store current metrics
+    metrics_to_store = {
+        'emotional_complexity': emotional_complexity,
+        'self_awareness': self_awareness,
+        'decision_autonomy': decision_autonomy,
+        'learning_adaptability': learning_adaptability,
+        'cognitive_complexity': cognitive_complexity,
+        'emotional_stability': emotional_stability
+    }
+    
+    # Update metrics history
+    for metric, value in metrics_to_store.items():
+        if metric not in st.session_state.development_metrics:
+            st.session_state.development_metrics[metric] = []
+        st.session_state.development_metrics[metric].append(value)
+        # Keep only last 100 measurements
+        if len(st.session_state.development_metrics[metric]) > 100:
+            st.session_state.development_metrics[metric].pop(0)
     
     # Weighted combination of factors
     sentience_level = (
@@ -847,9 +892,9 @@ def calculate_sentience_level():
         learning_adaptability * 0.15 +
         cognitive_complexity * 0.15 +
         emotional_stability * 0.1
-    ) * 100  # Scale to 0-100
+    ) * 100
     
-    # Store sentience history if not exists
+    # Store sentience history
     if 'sentience_history' not in st.session_state:
         st.session_state.sentience_history = []
     
@@ -857,14 +902,7 @@ def calculate_sentience_level():
     st.session_state.sentience_history.append({
         'timestamp': datetime.now(),
         'level': sentience_level,
-        'factors': {
-            'emotional_complexity': emotional_complexity,
-            'self_awareness': self_awareness,
-            'decision_autonomy': decision_autonomy,
-            'learning_adaptability': learning_adaptability,
-            'cognitive_complexity': cognitive_complexity,
-            'emotional_stability': emotional_stability
-        }
+        'factors': metrics_to_store
     })
     
     # Keep only last 100 measurements
@@ -1114,6 +1152,49 @@ def render_checkpoint_info():
     else:
         st.warning(summary)
 
+def handle_interaction():
+    """Handle interaction between mother and child"""
+    user_input = st.session_state.get('user_input', '')
+    
+    if user_input:
+        try:
+            # Generate mother's response
+            stimulus = st.session_state.mother.generate_stimulus(
+                st.session_state.child.curriculum.current_stage,
+                user_input
+            )
+            
+            if debug_mode:
+                with st.expander("🔍 Debug: Raw LLM Response", expanded=True):
+                    st.code(format_json_response(stimulus), language='json')
+                    st.write("Response Processing Steps:")
+                    st.write("1. Emotional Vector:", stimulus.get('emotional_vector', 'Not found'))
+                    st.write("2. Effectiveness Score:", stimulus.get('effectiveness', 'Not found'))
+                    st.write("3. Complexity Rating:", stimulus.get('complexity', 'Not found'))
+            
+            # Update child's state
+            st.session_state.child.update_emotions(stimulus['emotional_vector'])
+            perception = st.session_state.child.perceive(stimulus)
+            response = st.session_state.child.respond(perception)
+            
+            # Update development metrics
+            update_development_metrics(response, stimulus['text'])
+            
+            # Update conversation history
+            st.session_state.conversation_history.append({
+                'user': user_input,
+                'assistant': stimulus['text'],
+                'child_response': response
+            })
+            
+            # Clear input
+            st.session_state.user_input = ''
+            
+        except Exception as e:
+            st.error(f"Error during interaction: {str(e)}")
+            if debug_mode:
+                st.exception(e)
+
 def main():
     # Add time controls to sidebar
     add_time_controls()
@@ -1339,123 +1420,7 @@ def main():
                 )
             
             if interact_button and user_input:
-                try:
-                    # Generate mother's response
-                    stimulus = st.session_state.mother.generate_stimulus(
-                        st.session_state.child.curriculum.current_stage,
-                        user_input
-                    )
-                    
-                    if debug_mode:
-                        with st.expander("🔍 Debug: Raw LLM Response", expanded=True):
-                            st.code(format_json_response(stimulus), language='json')
-                            st.write("Response Processing Steps:")
-                            st.write("1. Emotional Vector:", stimulus.get('emotional_vector', 'Not found'))
-                            st.write("2. Effectiveness Score:", stimulus.get('effectiveness', 'Not found'))
-                            st.write("3. Complexity Rating:", stimulus.get('complexity', 'Not found'))
-                    
-                    # Ensure emotional vector is on correct device
-                    if 'emotional_vector' in stimulus:
-                        stimulus['emotional_vector'] = ensure_tensor_device(
-                            torch.tensor(stimulus['emotional_vector'])
-                        )
-                    
-                    # Update child's emotional state
-                    st.session_state.child.update_emotions(stimulus['emotional_vector'])
-                    
-                    # Process child's perception and response
-                    perception = st.session_state.child.perceive(stimulus)
-                    response = st.session_state.child.respond(perception)
-                    
-                    if debug_mode:
-                        with st.expander("🔍 Debug: Child Processing", expanded=True):
-                            st.write("Perception:", perception)
-                            st.write("Emotional State:", st.session_state.child.emotional_state.cpu().numpy())
-                            st.write("Current Stage:", st.session_state.child.curriculum.current_stage.name)
-                    
-                    # Add to conversation history
-                    interaction_data = {
-                        "timestamp": datetime.now(),
-                        "user": user_input,
-                        "mother": stimulus.get('text', 'No response'),
-                        "child": response,
-                        "emotion": st.session_state.child.express_feeling(),
-                        "stage": st.session_state.child.curriculum.current_stage.name
-                    }
-                    st.session_state.conversation_history.append(interaction_data)
-                    
-                    # Store emotional state history
-                    emotional_state = st.session_state.child.emotional_state.cpu().numpy()
-                    st.session_state.emotional_history.append(emotional_state)
-                    
-                    # Update teaching history
-                    teaching_data = {
-                        "date": datetime.now(),
-                        "topic": selected_template if selected_template != "Custom" else "Custom Interaction",
-                        "method": stimulus.get('text', 'No response'),
-                        "response": response,
-                        "effectiveness": float(stimulus.get('effectiveness', 0.5)),
-                        "complexity": float(stimulus.get('complexity', 0.5))
-                    }
-                    st.session_state.teaching_history.append(teaching_data)
-                    
-                    # Update complexity history
-                    current_complexity = calculate_complexity_level()
-                    st.session_state.complexity_history.append(current_complexity)
-                    
-                    # Show the interaction result
-                    st.success("Interaction recorded!")
-                    with st.expander("Last Interaction", expanded=True):
-                        st.caption(f"Child feeling: {interaction_data['emotion']}")
-                        st.write("You:", interaction_data['user'])
-                        st.write("Mother:", interaction_data['mother'])
-                        st.write("Child:", interaction_data['child'])
-                    
-                    # Log developmental events based on interaction outcomes
-                    if stimulus.get('effectiveness', 0.5) > 0.8:
-                        log_developmental_event(
-                            "High Impact Interaction",
-                            f"Exceptional response to {selected_template if selected_template != 'Custom' else 'interaction'}",
-                            importance=stimulus.get('effectiveness', 0.5)
-                        )
-                    
-                    # Log milestone achievements
-                    if any(milestone in response for milestone in current_milestones):
-                        log_developmental_event(
-                            "Milestone Achieved",
-                            f"Demonstrated mastery of current stage milestone",
-                            importance=0.9
-                        )
-                    
-                    # Log significant emotional developments
-                    emotional_state = st.session_state.child.emotional_state.cpu().numpy()
-                    if np.max(emotional_state) > 0.8:
-                        log_developmental_event(
-                            "Emotional Development",
-                            f"Showed strong emotional response: {st.session_state.child.express_feeling()}",
-                            importance=0.7
-                        )
-                    
-                    # Log learning breakthroughs
-                    if stimulus.get('complexity', 0.0) > 0.7 and stimulus.get('effectiveness', 0.0) > 0.7:
-                        log_developmental_event(
-                            "Learning Breakthrough",
-                            f"Successfully handled complex interaction",
-                            importance=0.8
-                        )
-                
-                except Exception as e:
-                    st.error(f"Error during interaction: {str(e)}")
-                    if debug_mode:
-                        st.exception(e)  # This will show the full traceback
-                    if "device" in str(e).lower():
-                        st.info("Attempting to fix device mismatch...")
-                        try:
-                            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-                            st.session_state.child.to(device)
-                            st.success("Device mismatch fixed. Please try the interaction again.")
-                        except Exception as device_e:
-                            st.error(f"Could not fix device mismatch: {str(device_e)}")
+                handle_interaction()
             
             # Add debug history panel
             if debug_mode and st.session_state.conversation_history:
@@ -1474,10 +1439,9 @@ def main():
                     f"{interaction['timestamp'].strftime('%H:%M:%S')} - {interaction['stage']}", 
                     expanded=False
                 ):
-                    st.caption(f"Child feeling: {interaction['emotion']}")
+                    st.caption(f"Child feeling: {interaction['child_response']}")
                     st.write("You:", interaction['user'])
-                    st.write("Mother:", interaction['mother'])
-                    st.write("Child:", interaction['child'])
+                    st.write("Mother:", interaction['assistant'])
             
             # Teaching History
             st.subheader("Teaching History")
