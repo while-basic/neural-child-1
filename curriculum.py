@@ -340,14 +340,16 @@ class DevelopmentalCurriculum:
                 'skills': ['emotional_expression', 'emotional_response'],
                 'milestones': ['Basic reflexes', 'Can cry to express needs'],
                 'current_milestones': ['Basic reflexes', 'Can cry to express needs'],
-                'upcoming_milestones': ['Social smiling', 'Track moving objects']
+                'upcoming_milestones': ['Social smiling', 'Track moving objects'],
+                'complexity_range': (0.1, 0.2)
             },
             DevelopmentalStage.EARLY_INFANCY: {
                 'behaviors': ['smiling', 'cooing', 'reaching'],
                 'skills': ['facial_recognition', 'emotional_expression'],
                 'milestones': ['Social smiling', 'Track moving objects'],
                 'current_milestones': ['Social smiling', 'Track moving objects'],
-                'upcoming_milestones': ['Object manipulation', 'Babbling']
+                'upcoming_milestones': ['Object manipulation', 'Babbling'],
+                'complexity_range': (0.2, 0.3)
             }
         }
         
@@ -357,7 +359,8 @@ class DevelopmentalCurriculum:
             'skills': [],
             'milestones': [],
             'current_milestones': [],
-            'upcoming_milestones': []
+            'upcoming_milestones': [],
+            'complexity_range': (0.1, 0.2)  # Default complexity range for unknown stages
         })
         
         # Add learning objectives

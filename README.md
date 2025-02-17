@@ -1,177 +1,89 @@
-# Neural Child Development System
+# Neural Child Development Dashboard
 
-A sophisticated AI-powered developmental simulation system that models child cognitive, emotional, and social development from newborn to mature adult stages.
-
-## Overview
-
-The Neural Child Development System is an advanced AI simulation that models human development across multiple stages, from newborn to mature adult. It incorporates:
-
-- Developmental stage-appropriate learning and behaviors
-- Emotional state modeling and regulation
-- Dynamic mother-child interactions
-- Milestone tracking and progression
-- Cognitive development simulation
-- Adaptive teaching strategies
+A sophisticated monitoring system for tracking and visualizing the development of a neural child. Built with Next.js, Shadcn/UI, and Plotly.js.
 
 ## Features
 
-### 1. Developmental Stages
-The system models 18 distinct developmental stages:
-- Newborn
-- Early/Late Infancy
-- Early/Late Toddler
-- Early/Late Preschool
-- Early/Middle/Late Childhood
-- Early/Middle/Late Elementary
-- Early/Middle/Late Adolescence
-- Young Adult
-- Mature Adult
+- Real-time monitoring of emotional states
+- Development stage tracking
+- Warning system with visual indicators
+- Interactive data visualization
+- Cognitive development metrics
+- Social skills monitoring
+- Physical development tracking
 
-Each stage includes:
-- Required skills
-- Learning focus areas
-- Age-appropriate emotional ranges
-- Allowed interaction types
-- Current and upcoming milestones
+## Tech Stack
 
-### 2. Interactive Interface
-- **Digital Child Tab**: Monitor current state, emotions, and experiences
-- **Mother's Interface**: Engage in stage-appropriate interactions
-- **Development Tracking**: Track cognitive and emotional progress
-- **Milestones & Progress**: Monitor developmental achievements
-- **Analytics**: Visualize learning and development metrics
+- **Framework**: Next.js 14
+- **UI Components**: Shadcn/UI
+- **Styling**: Tailwind CSS
+- **State Management**: Zustand
+- **Charts**: Plotly.js
+- **Icons**: Lucide Icons
+- **Animations**: Framer Motion
 
-### 3. Emotional Modeling
-- Real-time emotional state visualization
-- Multiple emotional dimensions (happiness, trust, fear, surprise, etc.)
-- Emotional stability tracking
-- Stage-appropriate emotional ranges
+## Getting Started
 
-### 4. Learning System
-- Autonomous learning capabilities
-- Memory consolidation
-- Self-supervised training
-- Metacognition system
-- Moral policy network
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/neural-child-dashboard.git
+```
 
-### 5. Mother-Child Interaction
-- Stage-appropriate interaction templates
-- Adaptive teaching strategies
-- Emotional response modeling
-- Progress tracking
-- Development metrics
-
-## Technical Architecture
-
-### Core Components
-1. **DynamicNeuralChild**: Main neural network architecture
-2. **DifferentiableMemory**: Memory system
-3. **MoralPolicyNetwork**: Ethical decision-making
-4. **MetacognitionSystem**: Self-awareness and learning
-5. **DevelopmentalSystem**: Stage progression management
-6. **AutonomousTrainer**: Self-supervised learning
-7. **MotherLLM**: Interaction and response generation
-
-### Key Technologies
-- PyTorch for neural network implementation
-- Streamlit for user interface
-- LLM Studio integration for natural language processing
-- Plotly for data visualization
-- Custom developmental stage management system
-
-## Setup and Requirements
-
-### Prerequisites
-- Python 3.x
-- PyTorch
-- Streamlit
-- LLM Studio (local installation)
-- Required Python packages (see requirements.txt)
-
-### Installation
-1. Clone the repository
 2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Configure LLM Studio (default: localhost:1234)
-4. Run the application:
-   ```bash
-   streamlit run app.py
-   ```
+```bash
+cd neural-child-dashboard
+npm install
+```
 
-### Configuration
-Key configurations in `config.py`:
-- Model parameters (EMBEDDING_DIM, HIDDEN_DIM)
-- Training settings (MAX_ITERATIONS, SAVE_INTERVAL)
-- Development thresholds (MIN_STAGE_SUCCESS_RATE)
-- Memory settings (MEMORY_CAPACITY)
+3. Run the development server:
+```bash
+npm run dev
+```
 
-## Usage
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### Basic Interaction
-1. Start the application
-2. Monitor child's current state in the Digital Child tab
-3. Interact through the Mother's Interface
-4. Track progress in Development and Analytics tabs
+## Project Structure
 
-### Development Tracking
-- Monitor milestone achievements
-- Track emotional stability
-- View learning progress
-- Analyze cognitive development
-- Review interaction history
+```
+src/
+├── app/
+│   ├── layout.tsx
+│   ├── page.tsx
+│   └── globals.css
+├── components/
+│   └── ui/
+│       ├── card.tsx
+│       ├── progress.tsx
+│       └── tabs.tsx
+├── lib/
+│   ├── store.ts
+│   └── utils.ts
+└── types/
+    └── index.ts
+```
 
-### Save/Load Functionality
-- Save current state and progress
-- Load previous development states
-- Track long-term development
+## Development
 
-## Debug Features
-
-### Debug Mode
-- Raw LLM response viewing
-- Processing step visualization
-- Emotional analysis details
-- Connection status monitoring
-- Detailed interaction logging
-
-### Error Handling
-- Device mismatch correction
-- Response parsing recovery
-- Stage transition validation
-- Emotional state verification
-
-## Development Notes
-
-### Accelerated Development Configuration
-The system is configured for rapid development with the following settings:
-- Only 10 interactions required per developmental stage (reduced from default 500)
-- Lowered progression thresholds:
-  - Minimum stage success rate: 0.4
-  - Stage progression threshold: 0.5
-  - Performance threshold for advancement: 0.6
-- No time-based restrictions between stage transitions
-
-These settings allow for faster progression through developmental stages while maintaining basic developmental checks. This is useful for testing and rapid iteration, but may not reflect realistic human development timeframes.
-
-**Note**: These settings can be adjusted in `config.py` if slower, more realistic development is desired.
+- **Components**: UI components are built using Shadcn/UI with custom styling
+- **State Management**: Global state is managed using Zustand
+- **Styling**: Custom Tailwind CSS classes with gradient borders and animations
+- **Data Visualization**: Interactive charts using Plotly.js
+- **Theme**: Dark theme with gradient accents and glowing effects
 
 ## Contributing
 
-Guidelines for contributing to the project:
 1. Fork the repository
-2. Create a feature branch
-3. Submit pull requests with comprehensive descriptions
-4. Follow existing code style and documentation patterns
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
 ## License
 
-[Specify your license here]
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-- LLM Studio for language model integration
-- Streamlit for UI framework
-- PyTorch for neural network implementation
-- [Add other acknowledgments]
+- Shadcn/UI for the beautiful component library
+- Plotly.js for the powerful charting capabilities
+- The Next.js team for the amazing framework

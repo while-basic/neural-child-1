@@ -155,13 +155,13 @@ class EmotionalRegulation(nn.Module):
                 nn.Dropout(0.1)
             ),
             nn.Sequential(
-                nn.Linear(hidden_dim, hidden_dim),
-                nn.LayerNorm(hidden_dim),
+                nn.Linear(hidden_dim, emotion_dim),
+                nn.LayerNorm(emotion_dim),
                 nn.ReLU(),
                 nn.Dropout(0.1)
             ),
             nn.Sequential(
-                nn.Linear(hidden_dim, emotion_dim),
+                nn.Linear(emotion_dim, emotion_dim),
                 nn.Sigmoid()
             )
         ])
@@ -218,11 +218,16 @@ class EmotionalRegulation(nn.Module):
         
         # Apply regulation through residual network
         regulated_state = emotional_state
-        for layer in self.regulation_network:
-            residual = regulated_state
-            regulated_state = layer(torch.cat([regulated_state, target_state], dim=-1))
-            if regulated_state.shape == residual.shape:
-                regulated_state = regulated_state + residual
+        for i, layer in enumerate(self.regulation_network):
+            if i == 0:
+                # First layer concatenates current and target states
+                regulated_state = layer(torch.cat([regulated_state, target_state], dim=-1))
+            else:
+                # Subsequent layers maintain emotion_dim dimensions
+                residual = regulated_state
+                regulated_state = layer(regulated_state)
+                if regulated_state.shape == residual.shape:
+                    regulated_state = regulated_state + residual
         
         # Apply adaptive regulation strength
         final_state = (
@@ -256,6 +261,12 @@ class EmotionalRegulation(nn.Module):
     
     def _apply_context(self, emotional_state: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
         """Apply contextual modulation to emotional state."""
+        # Ensure both tensors have the same number of dimensions
+        if emotional_state.dim() == 1:
+            emotional_state = emotional_state.unsqueeze(0)
+        if context.dim() == 1:
+            context = context.unsqueeze(0)
+            
         context_influence = self.context_encoder(
             torch.cat([context, emotional_state], dim=-1)
         )
@@ -263,6 +274,10 @@ class EmotionalRegulation(nn.Module):
     
     def _update_memory(self, emotional_state: torch.Tensor, context: Optional[Dict[str, Any]] = None):
         """Update emotional memory with current state and context."""
+        # Ensure emotional_state is 1D
+        if emotional_state.dim() == 2:
+            emotional_state = emotional_state.squeeze(0)
+            
         # Create memory entry
         memory = EmotionalMemory(
             content=context.get('content', '') if context else '',
@@ -272,7 +287,7 @@ class EmotionalRegulation(nn.Module):
             },
             timestamp=float(torch.rand(1)),  # Simplified timestamp
             intensity=float(emotional_state.mean()),
-            valence=float(emotional_state[0] - emotional_state[1]),  # happiness - sadness
+            valence=float(emotional_state[0] - emotional_state[1]) if len(emotional_state) > 1 else 0.0,  # happiness - sadness
             arousal=float(emotional_state.std())
         )
         

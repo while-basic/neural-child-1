@@ -666,9 +666,12 @@ class DigitalChild:
         Args:
             mother_response: Emotional state from mother's response
         """
+        # Convert mother's response to tensor with all 8 dimensions
+        mother_emotions = torch.tensor(mother_response.to_vector(), device=self.device)
+        
         # Use emotional regulation to modulate response
         regulated_response = self.emotional_regulation(
-            torch.tensor(mother_response.to_vector(), device=self.device),
+            mother_emotions,
             context={'stage': self.current_stage.value}
         )
         
@@ -1061,6 +1064,47 @@ class DigitalChild:
             interaction,
             f"Interaction that helps develop {category.lower()} skills"
         )
+
+    def get_stage_requirements(self) -> Dict[str, Any]:
+        """Get requirements for the current developmental stage.
+        
+        Returns:
+            Dictionary containing stage requirements including:
+            - complexity_range: Tuple of (min_complexity, max_complexity)
+            - min_duration_days: Minimum days required in stage
+            - required_skills: List of required skills
+            - success_criteria: Dictionary of success criteria
+        """
+        try:
+            stage_reqs = {
+                'complexity_range': (0.0, 0.2),  # Default range for NEWBORN stage
+                'min_duration_days': 30,
+                'required_skills': [],
+                'success_criteria': {}
+            }
+            
+            # Adjust complexity range based on stage
+            if self.current_stage == DevelopmentalStage.NEWBORN:
+                stage_reqs['complexity_range'] = (0.0, 0.2)
+            elif self.current_stage == DevelopmentalStage.INFANT:
+                stage_reqs['complexity_range'] = (0.2, 0.4)
+            elif self.current_stage == DevelopmentalStage.TODDLER:
+                stage_reqs['complexity_range'] = (0.4, 0.6)
+            elif self.current_stage == DevelopmentalStage.PRESCHOOL:
+                stage_reqs['complexity_range'] = (0.6, 0.8)
+            else:
+                stage_reqs['complexity_range'] = (0.8, 1.0)
+                
+            return stage_reqs
+            
+        except Exception as e:
+            logger.error(f"Error getting stage requirements: {str(e)}")
+            return {
+                'complexity_range': (0.0, 0.2),  # Safe default
+                'min_duration_days': 30,
+                'required_skills': [],
+                'success_criteria': {}
+            }
 
 def main() -> None:
     """Main function to run the Neural Child simulation."""
