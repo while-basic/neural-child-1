@@ -54,6 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved learning parameter adjustments based on metacognitive assessment
 - Unified EmotionalState implementation across codebase to use dataclass version
 - Standardized emotional dimensions and complex emotion calculations
+- Enhanced EmotionalRegulation to properly handle 8-dimensional states
+- Updated emotion mixing weights initialization for better stability
 
 ### Fixed
 - Improved error handling in model response generation
@@ -75,6 +77,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed AttributeError in EmotionalState class by unifying implementation
 - Ensured consistent emotional dimension handling across all components
 - Corrected emotional state vector conversion and processing
+- Fixed IndexError in EmotionalRegulation by properly handling all 8 dimensions
+- Added proper dimension padding with appropriate default values
+- Corrected baseline emotion initialization for all dimensions
 
 ### Enhanced
 - Expanded emotional dimensions in EmotionalState to include trust, anticipation, and disgust

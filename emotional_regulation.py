@@ -111,7 +111,7 @@ class EmotionalRegulation(nn.Module):
     """Advanced emotional regulation system with memory and context awareness."""
     
     def __init__(self, 
-                 emotion_dim: int = 8,  # Increased for more emotional dimensions
+                 emotion_dim: int = 8,  # Fixed to 8 dimensions for all primary emotions
                  hidden_dim: int = 64,  # Increased for more complex processing
                  memory_size: int = 100,
                  device: Optional[torch.device] = None):
@@ -166,19 +166,40 @@ class EmotionalRegulation(nn.Module):
             )
         ])
         
+        # Initialize baseline emotions for all 8 dimensions
+        self.baseline_emotions = nn.Parameter(torch.tensor([
+            0.5,  # happiness
+            0.5,  # sadness
+            0.5,  # anger
+            0.5,  # fear
+            0.0,  # surprise
+            0.0,  # disgust
+            0.5,  # trust
+            0.5   # anticipation
+        ], device=self.device))
+        
         # Adaptive parameters with learned weights
         self.regulation_strength = nn.Parameter(torch.tensor(0.5))
         self.emotional_stability = nn.Parameter(torch.tensor(0.7))
-        self.baseline_emotions = nn.Parameter(torch.ones(emotion_dim) * 0.5)
         
-        # Emotion mixing weights
-        self.emotion_mixing_weights = nn.Parameter(torch.ones(emotion_dim, emotion_dim) / emotion_dim)
+        # Emotion mixing weights for all 8 dimensions
+        self.emotion_mixing_weights = nn.Parameter(torch.eye(emotion_dim))
         
         # Move to device
         self.to(self.device)
     
     def forward(self, x: torch.Tensor, context: Optional[Dict[str, Any]] = None) -> torch.Tensor:
         """Process and regulate emotional state with context awareness."""
+        # Ensure input has correct dimensions
+        if x.dim() == 1:
+            x = x.unsqueeze(0)
+        if x.size(-1) != self.emotion_dim:
+            # Pad with default values if necessary
+            padded = torch.zeros(x.size(0), self.emotion_dim, device=self.device)
+            padded[:, :x.size(-1)] = x
+            padded[:, 4:] = torch.tensor([0.0, 0.0, 0.5, 0.5], device=self.device)  # Default values for additional emotions
+            x = padded
+        
         x = x.to(self.device)
         
         # Process basic emotions
