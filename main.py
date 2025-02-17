@@ -454,59 +454,111 @@ class DigitalChild:
     def _load_state(self) -> None:
         """Load model state from backup if available."""
         try:
-            state_dict = torch.load('checkpoints/child_state.pt', map_location=self.device)
+            # Add safe classes to torch serialization
+            torch.serialization.add_safe_globals([
+                DevelopmentalStage,
+                EmotionalState,
+                datetime,
+                Dict, List, Any, Tuple  # Add common types
+            ])
             
-            # Load neural model state
-            self.neural_model.load_state_dict(state_dict['neural_model'])
+            # Try to load state with proper error handling
+            try:
+                state_dict = torch.load(
+                    'checkpoints/child_state.pt',
+                    map_location=self.device,
+                    pickle_module=torch.serialization.pickle,
+                    weights_only=False
+                )
+            except RuntimeError as e:
+                logger.error(f"Error loading state file: {e}")
+                raise
+            except Exception as e:
+                logger.error(f"Unexpected error loading state: {e}")
+                raise
             
-            # Load developmental state
-            self.current_stage = state_dict.get('current_stage', DevelopmentalStage.NEWBORN)
+            if not isinstance(state_dict, dict):
+                raise ValueError("Loaded state is not a dictionary")
+            
+            # Load neural model state if available
+            if 'neural_model' in state_dict and isinstance(state_dict['neural_model'], dict):
+                try:
+                    self.neural_model.load_state_dict(state_dict['neural_model'])
+                    logger.info("Successfully loaded neural model state")
+                except Exception as e:
+                    logger.warning(f"Could not load neural model state: {e}")
+            
+            # Load developmental stage
+            if 'current_stage' in state_dict:
+                if isinstance(state_dict['current_stage'], str):
+                    self.current_stage = DevelopmentalStage[state_dict['current_stage']]
+                elif isinstance(state_dict['current_stage'], DevelopmentalStage):
+                    self.current_stage = state_dict['current_stage']
+                else:
+                    logger.warning("Invalid stage format in state file")
+                    self.current_stage = DevelopmentalStage.NEWBORN
+            
+            # Load age
             self.age_months = state_dict.get('age_months', 0)
             
-            # Load curriculum state if available
+            # Load curriculum state
             if 'curriculum' in state_dict:
-                self.curriculum.load_state(state_dict['curriculum'])
+                try:
+                    self.curriculum.load_state(state_dict['curriculum'])
+                    logger.info("Successfully loaded curriculum state")
+                except Exception as e:
+                    logger.warning(f"Could not load curriculum state: {e}")
+                    self.curriculum.reset()
             
             # Ensure curriculum stage matches child's stage
             self.curriculum.update_stage(self.current_stage)
             
-            # Load emotional state if available
+            # Load emotional state
             if 'emotional_state' in state_dict:
-                emotional_data = state_dict['emotional_state']
-                self.emotional_state = EmotionalState(
-                    happiness=emotional_data.get('happiness', 0.5),
-                    sadness=emotional_data.get('sadness', 0.5),
-                    anger=emotional_data.get('anger', 0.5),
-                    fear=emotional_data.get('fear', 0.5),
-                    surprise=emotional_data.get('surprise', 0.5),
-                    disgust=emotional_data.get('disgust', 0.0),
-                    trust=emotional_data.get('trust', 0.5),
-                    anticipation=emotional_data.get('anticipation', 0.5)
-                )
+                try:
+                    emotional_data = state_dict['emotional_state']
+                    if isinstance(emotional_data, dict):
+                        self.emotional_state = EmotionalState(
+                            happiness=float(emotional_data.get('happiness', 0.5)),
+                            sadness=float(emotional_data.get('sadness', 0.5)),
+                            anger=float(emotional_data.get('anger', 0.5)),
+                            fear=float(emotional_data.get('fear', 0.5)),
+                            surprise=float(emotional_data.get('surprise', 0.5)),
+                            disgust=float(emotional_data.get('disgust', 0.0)),
+                            trust=float(emotional_data.get('trust', 0.5)),
+                            anticipation=float(emotional_data.get('anticipation', 0.5))
+                        )
+                    elif isinstance(emotional_data, (list, tuple)) and len(emotional_data) >= 4:
+                        self.emotional_state = EmotionalState(
+                            happiness=float(emotional_data[0]),
+                            sadness=float(emotional_data[1]),
+                            anger=float(emotional_data[2]),
+                            fear=float(emotional_data[3]),
+                            surprise=float(emotional_data[4]) if len(emotional_data) > 4 else 0.0,
+                            disgust=float(emotional_data[5]) if len(emotional_data) > 5 else 0.0,
+                            trust=float(emotional_data[6]) if len(emotional_data) > 6 else 0.5,
+                            anticipation=float(emotional_data[7]) if len(emotional_data) > 7 else 0.5
+                        )
+                    logger.info("Successfully loaded emotional state")
+                except Exception as e:
+                    logger.warning(f"Could not load emotional state: {e}")
+                    self.emotional_state = EmotionalState(0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.5, 0.5)
             
             # Load warning system state
-            if 'warning_state' in state_dict:
-                self.warning_state = state_dict['warning_state']
-            
-            # Load recent warnings
-            if 'recent_warnings' in state_dict:
-                self.recent_warnings = state_dict['recent_warnings']
-            
-            # Load speed multiplier
-            if 'speed_multiplier' in state_dict:
-                self.speed_multiplier = state_dict['speed_multiplier']
-            
-            # Load speed locked state
-            if 'speed_locked' in state_dict:
-                self.speed_locked = state_dict['speed_locked']
+            self.warning_state = state_dict.get('warning_state', "GREEN")
+            self.recent_warnings = state_dict.get('recent_warnings', [])
+            self.speed_multiplier = float(state_dict.get('speed_multiplier', 1.0))
+            self.speed_locked = bool(state_dict.get('speed_locked', False))
             
             logger.info("Successfully loaded model state")
+            
         except FileNotFoundError:
             logger.info("No existing state found. Starting fresh.")
             self._initialize_fresh_state()
         except Exception as error:
-            logger.error(f"Error loading state: {error}")
-            raise
+            logger.error(f"Error loading state: {str(error)}")
+            logger.info("Initializing fresh state due to loading error.")
+            self._initialize_fresh_state()
     
     def _initialize_fresh_state(self) -> None:
         """Initialize a fresh state for the model."""
@@ -615,10 +667,15 @@ class DigitalChild:
             mother_response: Emotional state from mother's response
         """
         # Use emotional regulation to modulate response
-        regulated_response = self.emotional_regulation.process(
-            current_state=self.emotional_state,
-            input_state=mother_response
+        regulated_response = self.emotional_regulation(
+            torch.tensor(mother_response.to_vector(), device=self.device),
+            context={'stage': self.current_stage.value}
         )
+        
+        # Convert tensor back to EmotionalState
+        if isinstance(regulated_response, torch.Tensor):
+            regulated_response = EmotionalState.from_vector(regulated_response.squeeze().cpu().tolist())
+        
         self.emotional_state = regulated_response
 
     def express_feeling(self) -> str:

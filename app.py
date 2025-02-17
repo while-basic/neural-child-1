@@ -14,9 +14,16 @@ import sseclient
 import threading
 import queue
 import os
-from developmental_stages import DevelopmentalStage, DevelopmentalSystem
-from typing import Optional, Dict, List, Any, Union
+import psutil
+from developmental_stages import (
+    DevelopmentalStage,
+    DevelopmentalSystem,
+    STAGE_DEFINITIONS,
+    StageCharacteristics
+)
+from typing import Optional, Dict, List, Any, Union, Tuple
 from pathlib import Path
+from emotional_state import EmotionalState
 
 # Define stage templates for interactions
 stage_templates = {
@@ -140,15 +147,68 @@ except ImportError:
 def validate_stage_definitions():
     """Validate that all developmental stages have proper definitions"""
     missing_stages = []
+    
+    # First verify STAGE_DEFINITIONS is imported correctly
+    if not STAGE_DEFINITIONS:
+        return ["Error: STAGE_DEFINITIONS is empty or not imported correctly"]
+    
     for stage in DevelopmentalStage:
         try:
-            # Create a temporary system to test stage definitions
+            # Verify stage exists in STAGE_DEFINITIONS
+            if stage not in STAGE_DEFINITIONS:
+                missing_stages.append(f"{stage.name} (missing definition)")
+                continue
+                
+            # Get stage definition
+            stage_def = STAGE_DEFINITIONS[stage]
+            
+            # Verify required fields
+            required_fields = {
+                'age_range': tuple,
+                'complexity_range': tuple,
+                'emotional_range': tuple,
+                'required_skills': list,
+                'learning_focus': list,
+                'current_milestones': list,
+                'upcoming_milestones': list
+            }
+            
+            for field, expected_type in required_fields.items():
+                if field not in stage_def:
+                    missing_stages.append(f"{stage.name} (missing field: {field})")
+                elif not isinstance(stage_def[field], expected_type):
+                    missing_stages.append(
+                        f"{stage.name} (invalid type for {field}: expected {expected_type.__name__})"
+                    )
+            
+            # Verify field contents
+            if stage_def.get('age_range') and len(stage_def['age_range']) != 2:
+                missing_stages.append(f"{stage.name} (invalid age_range format)")
+            
+            if stage_def.get('complexity_range') and len(stage_def['complexity_range']) != 2:
+                missing_stages.append(f"{stage.name} (invalid complexity_range format)")
+            
+            if stage_def.get('emotional_range') and len(stage_def['emotional_range']) != 2:
+                missing_stages.append(f"{stage.name} (invalid emotional_range format)")
+            
+            # Create a temporary system to test stage requirements
             system = DevelopmentalSystem()
             system.current_stage = stage
+            
             # Try to get requirements for each stage
-            system.get_stage_requirements()
+            reqs = system.get_stage_requirements()
+            
+            # Verify behaviors exist
+            if not reqs.get('behaviors'):
+                missing_stages.append(f"{stage.name} (missing behaviors)")
+            elif not isinstance(reqs['behaviors'], list):
+                missing_stages.append(f"{stage.name} (invalid behaviors format)")
+            elif len(reqs['behaviors']) < 1:
+                missing_stages.append(f"{stage.name} (empty behaviors list)")
+                
         except Exception as e:
-            missing_stages.append(stage.name)
+            missing_stages.append(f"{stage.name} (error: {str(e)})")
+            
     return missing_stages
 
 def initialize_new_session():
@@ -279,49 +339,75 @@ def ensure_tensor_device(tensor, target_device=None):
     return tensor
 
 def calculate_complexity_level():
-    """Calculate current complexity level based on various factors with time acceleration"""
+    """Calculate current complexity level based on multiple factors.
+    
+    Returns:
+        Tuple of (complexity_score, contributing_factors)
+    """
+    if 'child' not in st.session_state:
+        return 0.0, {}
+        
     child = st.session_state.child
-    stage_value = child.curriculum.current_stage.value
     
-    # Convert EmotionalState to numpy array directly
-    emotional_state = np.array([
-        child.emotional_state.happiness,
-        child.emotional_state.sadness,
-        child.emotional_state.anger,
-        child.emotional_state.fear
+    # Get metrics from various systems
+    metacog_metrics = child.metacognition.get_metrics()
+    learning_rate = child.autonomous_learner.get_learning_rate()
+    
+    # Convert emotional state to EmotionalState if needed
+    emotional_state = child.emotional_state
+    if isinstance(emotional_state, torch.Tensor):
+        emotional_state = EmotionalState(
+            happiness=float(emotional_state[0]),
+            sadness=float(emotional_state[1]),
+            anger=float(emotional_state[2]),
+            fear=float(emotional_state[3]),
+            surprise=float(emotional_state[4]) if len(emotional_state) > 4 else 0.0,
+            disgust=float(emotional_state[5]) if len(emotional_state) > 5 else 0.0,
+            trust=float(emotional_state[6]) if len(emotional_state) > 6 else 0.5,
+            anticipation=float(emotional_state[7]) if len(emotional_state) > 7 else 0.5
+        )
+    
+    # Safely convert emotional state values to float
+    emotional_values = np.array([
+        float(emotional_state.happiness),
+        float(emotional_state.sadness),
+        float(emotional_state.anger),
+        float(emotional_state.fear),
+        float(emotional_state.surprise),
+        float(emotional_state.disgust),
+        float(emotional_state.trust),
+        float(emotional_state.anticipation)
     ])
-    emotional_complexity = np.mean(emotional_state)
     
-    learning_progress = len(st.session_state.learning_history)
+    # Calculate component scores
+    cognitive_score = metacog_metrics.get('learning_efficiency', 0.0)
+    attention_score = metacog_metrics.get('attention_focus', 0.0)
+    emotional_score = float(child.acceleration_metrics.get('emotional_stability', 0.0))
     
-    # Calculate age-based acceleration
-    age_hours = (datetime.now() - st.session_state.birth_time).total_seconds() * 60  # Convert to accelerated hours
-    age_months = age_hours / (30 * 24)  # Convert hours to months
-    age_factor = min(1.0, age_months / 12)  # Cap at 1 year for scaling
+    # Weight the components
+    weights = {
+        'cognitive_development': 0.35,
+        'attention_capacity': 0.25,
+        'emotional_stability': 0.25,
+        'learning_rate': 0.15
+    }
     
-    return (
-        stage_value * 0.3 +  # Reduce stage weight
-        emotional_complexity * 0.2 +  # Reduce emotional weight
-        (learning_progress/100) * 0.2 +  # Reduce learning weight
-        age_factor * 0.3  # Add age-based acceleration
-    ) * 100  # Scale to 0-100
-
-def render_milestone_timeline():
-    """Render interactive milestone timeline"""
-    milestones = st.session_state.milestone_history
-    if not milestones:
-        return
+    # Calculate weighted scores
+    contributing_factors = {
+        'cognitive_development': cognitive_score * weights['cognitive_development'],
+        'attention_capacity': attention_score * weights['attention_capacity'],
+        'emotional_stability': emotional_score * weights['emotional_stability'],
+        'learning_rate': min(learning_rate * 100, 1.0) * weights['learning_rate']
+    }
     
-    df = pd.DataFrame(milestones)
-    fig = px.timeline(df, x_start='date', x_end='date',
-                     y='category', color='type',
-                     hover_data=['description'])
-    fig.update_layout(height=400)
-    st.plotly_chart(fig, use_container_width=True)
+    # Calculate total complexity score
+    total_score = sum(contributing_factors.values())
+    
+    return total_score, contributing_factors
 
 def render_complexity_gauge():
     """Render complexity level gauge"""
-    complexity = calculate_complexity_level()
+    complexity, _ = calculate_complexity_level()
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=complexity,
@@ -340,31 +426,84 @@ def render_complexity_gauge():
     st.plotly_chart(fig, use_container_width=True)
 
 def create_emotion_radar_chart(emotional_state):
-    """Create radar chart for emotional state visualization"""
-    categories = ['Happiness', 'Trust', 'Fear', 'Surprise', 'Anger', 'Sadness']
-    values = list(emotional_state) + [emotional_state[0]]  # Close the polygon
+    """Create radar chart for emotional state visualization.
+    
+    Args:
+        emotional_state: EmotionalState object or tensor containing emotion values
+        
+    Returns:
+        Plotly figure object with the radar chart
+    """
+    # Convert tensor to EmotionalState if needed
+    if isinstance(emotional_state, torch.Tensor):
+        if emotional_state.dim() == 1:
+            emotional_state = EmotionalState(
+                happiness=float(emotional_state[0]),
+                sadness=float(emotional_state[1]),
+                anger=float(emotional_state[2]),
+                fear=float(emotional_state[3]),
+                surprise=float(emotional_state[4]) if len(emotional_state) > 4 else 0.0,
+                disgust=float(emotional_state[5]) if len(emotional_state) > 5 else 0.0,
+                trust=float(emotional_state[6]) if len(emotional_state) > 6 else 0.5,
+                anticipation=float(emotional_state[7]) if len(emotional_state) > 7 else 0.5
+            )
+    
+    # Ensure we're working with CPU values
+    categories = ['Happiness', 'Trust', 'Fear', 'Surprise', 'Sadness', 'Anger', 'Disgust', 'Anticipation']
+    
+    # Get values and handle potential CUDA tensors
+    values = [
+        float(emotional_state.happiness),
+        float(emotional_state.trust),
+        float(emotional_state.fear),
+        float(emotional_state.surprise),
+        float(emotional_state.sadness),
+        float(emotional_state.anger),
+        float(emotional_state.disgust),
+        float(emotional_state.anticipation)
+    ]
+    
+    # Add first value again to close the polygon
+    values.append(values[0])
+    categories.append(categories[0])
     
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(
         r=values,
-        theta=categories + [categories[0]],
+        theta=categories,
         fill='toself',
-        name='Current Emotional State'
+        fillcolor='rgba(64, 144, 248, 0.3)',
+        line=dict(color='rgb(64, 144, 248)', width=2),
+        name='Current State'
     ))
     
     fig.update_layout(
         polar=dict(
             radialaxis=dict(
                 visible=True,
-                range=[0, 1]
-            )),
+                range=[0, 1],
+                tickfont=dict(size=10),
+                gridcolor='rgba(0,0,0,0.1)',
+                linecolor='rgba(0,0,0,0.1)',
+            ),
+            angularaxis=dict(
+                tickfont=dict(size=10),
+                gridcolor='rgba(0,0,0,0.1)',
+                linecolor='rgba(0,0,0,0.1)',
+            ),
+            bgcolor='rgba(255,255,255,0.9)'
+        ),
         showlegend=False,
-        height=300
+        margin=dict(l=80, r=80, t=20, b=20),
+        height=400,
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)'
     )
+    
     return fig
 
 def calculate_emotional_stability():
-    """Calculate emotional stability percentage"""
+    """Calculate emotional stability percentage."""
     if not hasattr(st.session_state, 'emotional_history'):
         st.session_state.emotional_history = []
     
@@ -377,9 +516,38 @@ def calculate_emotional_stability():
     
     variations = []
     for i in range(1, len(recent_states)):
-        curr_state = np.array(recent_states[i].to_vector())
-        prev_state = np.array(recent_states[i-1].to_vector())
-        variation = np.mean(np.abs(curr_state - prev_state))
+        # Convert tensors to EmotionalState if needed
+        curr_state = recent_states[i]
+        prev_state = recent_states[i-1]
+        
+        if isinstance(curr_state, torch.Tensor):
+            curr_state = EmotionalState(
+                happiness=float(curr_state[0]),
+                sadness=float(curr_state[1]),
+                anger=float(curr_state[2]),
+                fear=float(curr_state[3]),
+                surprise=float(curr_state[4]) if len(curr_state) > 4 else 0.0,
+                disgust=float(curr_state[5]) if len(curr_state) > 5 else 0.0,
+                trust=float(curr_state[6]) if len(curr_state) > 6 else 0.5,
+                anticipation=float(curr_state[7]) if len(curr_state) > 7 else 0.5
+            )
+            
+        if isinstance(prev_state, torch.Tensor):
+            prev_state = EmotionalState(
+                happiness=float(prev_state[0]),
+                sadness=float(prev_state[1]),
+                anger=float(prev_state[2]),
+                fear=float(prev_state[3]),
+                surprise=float(prev_state[4]) if len(prev_state) > 4 else 0.0,
+                disgust=float(prev_state[5]) if len(prev_state) > 5 else 0.0,
+                trust=float(prev_state[6]) if len(prev_state) > 6 else 0.5,
+                anticipation=float(prev_state[7]) if len(prev_state) > 7 else 0.5
+            )
+        
+        # Calculate variation using EmotionalState values
+        curr_values = np.array(curr_state.to_vector())
+        prev_values = np.array(prev_state.to_vector())
+        variation = np.mean(np.abs(curr_values - prev_values))
         variations.append(variation)
     
     stability = 100 * (1 - np.mean(variations))
@@ -1483,19 +1651,160 @@ def render_warning_dashboard():
         - Optimal development conditions
         """)
 
+def monitor_gpu_usage() -> Dict[str, Any]:
+    """Monitor GPU usage and return relevant metrics.
+    
+    Returns:
+        Dict containing GPU metrics including:
+        - is_available: Whether CUDA is available
+        - device_name: Name of the GPU device
+        - memory_allocated: Memory currently allocated (MB)
+        - memory_cached: Memory cached (MB)
+        - memory_reserved: Total memory reserved (MB)
+        - utilization: GPU utilization percentage (if available)
+    """
+    metrics = {
+        'is_available': torch.cuda.is_available(),
+        'device_name': 'CPU (CUDA not available)',
+        'memory_allocated': 0,
+        'memory_cached': 0,
+        'memory_reserved': 0,
+        'utilization': 0
+    }
+    
+    if metrics['is_available']:
+        try:
+            # Get device name
+            metrics['device_name'] = torch.cuda.get_device_name(0)
+            
+            # Get memory statistics (convert to MB)
+            metrics['memory_allocated'] = torch.cuda.memory_allocated(0) / 1024**2
+            metrics['memory_cached'] = torch.cuda.memory_reserved(0) / 1024**2
+            metrics['memory_reserved'] = torch.cuda.max_memory_reserved(0) / 1024**2
+            
+            # Try to get GPU utilization (requires nvidia-smi)
+            try:
+                import pynvml
+                pynvml.nvmlInit()
+                handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+                utilization = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                metrics['utilization'] = utilization.gpu
+            except:
+                metrics['utilization'] = None
+                
+        except Exception as e:
+            st.warning(f"Error getting GPU metrics: {str(e)}")
+    
+    return metrics
+
+def render_gpu_dashboard():
+    """Render GPU monitoring dashboard with real-time metrics."""
+    st.subheader("🎮 GPU Monitoring")
+    
+    # Get GPU metrics
+    metrics = monitor_gpu_usage()
+    
+    # Create three columns for metrics
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric(
+            "GPU Status",
+            "Active 🟢" if metrics['is_available'] else "Inactive 🔴",
+            help="Shows if CUDA GPU is available and active"
+        )
+        st.text(f"Device: {metrics['device_name']}")
+    
+    with col2:
+        if metrics['is_available']:
+            # Memory gauge
+            fig = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=metrics['memory_allocated'],
+                title={'text': "GPU Memory (MB)"},
+                gauge={
+                    'axis': {'range': [None, metrics['memory_reserved']]},
+                    'bar': {'color': "darkblue"},
+                    'steps': [
+                        {'range': [0, metrics['memory_reserved']], 'color': "lightgray"}
+                    ],
+                }
+            ))
+            fig.update_layout(height=150, margin=dict(l=10, r=10, t=30, b=10))
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("GPU memory monitoring not available")
+    
+    with col3:
+        if metrics['is_available'] and metrics['utilization'] is not None:
+            # Utilization gauge
+            fig = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=metrics['utilization'],
+                title={'text': "GPU Utilization %"},
+                gauge={
+                    'axis': {'range': [0, 100]},
+                    'bar': {'color': "darkgreen"},
+                    'steps': [
+                        {'range': [0, 30], 'color': "lightgreen"},
+                        {'range': [30, 70], 'color': "yellow"},
+                        {'range': [70, 100], 'color': "red"}
+                    ],
+                }
+            ))
+            fig.update_layout(height=150, margin=dict(l=10, r=10, t=30, b=10))
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("GPU utilization monitoring not available")
+    
+    if metrics['is_available']:
+        # Detailed metrics
+        st.markdown("### Detailed Metrics")
+        metrics_df = pd.DataFrame({
+            'Metric': [
+                'Memory Allocated',
+                'Memory Cached',
+                'Memory Reserved',
+                'Utilization'
+            ],
+            'Value': [
+                f"{metrics['memory_allocated']:.2f} MB",
+                f"{metrics['memory_cached']:.2f} MB",
+                f"{metrics['memory_reserved']:.2f} MB",
+                f"{metrics['utilization']}%" if metrics['utilization'] is not None else "N/A"
+            ]
+        })
+        st.table(metrics_df)
+
 def main():
     # Add time controls to sidebar
     add_time_controls()
     
-    if DigitalChild is None:
-        st.error("Cannot run application: Required modules not found")
-        return
+    # Initialize session if needed
+    if 'initialized' not in st.session_state:
+        initialize_new_session()
     
-    if not st.session_state.get('initialized', False):
-        st.error("Session state not properly initialized")
+    # Display title and description
+    st.title("🧠 Neural Child Development Dashboard")
+    
+    # Add GPU monitoring dashboard
+    render_gpu_dashboard()
+    
+    # Display warning dashboard
+    render_warning_dashboard()
+    
+    # Create tabs for different views
+    tabs = st.tabs([
+        "Development Progress",
+        "Emotional State",
+        "Learning Analytics",
+        "Interaction History",
+        "System Status"
+    ])
+    
+    if 'child' not in st.session_state:
+        st.error("Session not initialized. Please restart the application.")
         return
-
-    st.title("Digital Child Development System")
     
     # Top-level metrics dashboard
     col1, col2, col3, col4 = st.columns(4)
@@ -1512,471 +1821,86 @@ def main():
         speed_color = "🟢" if warning_state == "GREEN" else "🟡" if warning_state == "YELLOW" else "🔴"
         st.metric("Development Speed", f"{speed_color} {dev_speed:.1f}x")
     
-    # Main content tabs
-    tabs = st.tabs([
-        "Digital Child",
-        "Mother's Interface",
-        "Development Tracking",
-        "Milestones & Progress",
-        "Analytics",
-        "Warning System"  # New tab
-    ])
-    
-    with tabs[0]:  # Digital Child Tab
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.subheader("Current State & Emotions")
-            # Use birth_time from session state
-            birth_time = format_detailed_age(st.session_state.birth_time)
-            st.info(f"🎂 Time since birth: {birth_time}")
-            
-            current_feeling = st.session_state.child.express_feeling()
-            st.info(f"Child is feeling: {current_feeling}")
-            
-            # Emotional State Visualization
-            emotional_state = np.array([
-                st.session_state.child.emotional_state.happiness,
-                st.session_state.child.emotional_state.sadness,
-                st.session_state.child.emotional_state.anger,
-                st.session_state.child.emotional_state.fear
-            ])
-            emotions_fig = create_emotion_radar_chart(emotional_state)
-            st.plotly_chart(emotions_fig, use_container_width=True)
-            
-            # Recent Experiences
-            st.subheader("Recent Experiences")
-            for exp in st.session_state.learning_history[-5:]:
-                st.write(f"- {exp}")
-        
-        with col2:
-            st.subheader("Complexity Level")
-            render_complexity_gauge()
-            
-            st.subheader("Learning Stats")
-            st.metric("Concepts Learned", len(st.session_state.learning_history))
-            st.metric("Emotional Stability", f"{calculate_emotional_stability():.2f}%")
-    
-    with tabs[1]:  # Mother's Interface Tab
-        # Add debug mode toggle
-        debug_mode = st.sidebar.checkbox("Debug Mode", value=True, 
-                                       help="Show raw LLM responses and processing details")
-        
-        # Add interaction guide toggle in sidebar
-        show_interaction_guide = st.sidebar.checkbox("Show Interaction Guide", value=False,
-                                                   help="Display a comprehensive guide of all possible interactions")
-        
-        if show_interaction_guide:
-            st.subheader("📚 Interaction Guide")
-            
-            # Display categorized interactions
-            for category, info in stage_templates.items():
-                # Convert the stage enum to a readable string
-                stage_name = category.name.replace('_', ' ').title()
-                with st.expander(stage_name, expanded=False):
-                    # Display the first template as a description
-                    st.write(f"**Available Actions:**")
-                    for template in info:
-                        st.write(template)
-            
-            st.divider()
-        
-        col1, col2 = st.columns([2, 1])
-        
-        with col1:
-            st.subheader("Teaching & Nurturing Interface")
-            
-            # Interact with Child
-            st.subheader("Interact with Child")
-            
-            # Get stage requirements with safe default
-            stage_reqs = st.session_state.child.curriculum.get_stage_requirements()
-            current_behaviors = stage_reqs.get('behaviors', [])
-            
-            # Create a list of all interactions with their stage information
-            all_interactions = []
-            for stage, templates in stage_templates.items():
-                for template in templates:
-                    all_interactions.append({
-                        "template": template,
-                        "stage": stage.name,
-                        "is_current": stage == st.session_state.child.curriculum.current_stage
-                    })
-
-            # Interaction selection method
-            selection_method = st.radio(
-                "Interaction Selection Method:",
-                ["Stage-Appropriate", "All Interactions", "By Category"],
-                horizontal=True
-            )
-
-            if selection_method == "Stage-Appropriate":
-                template_options = stage_templates.get(st.session_state.child.curriculum.current_stage, ["Custom"])
-                selected_template = st.selectbox(
-                    "Current Stage Interactions:", 
-                    ["Custom"] + template_options,
-                    key="interaction_type"
-                )
-            
-            elif selection_method == "All Interactions":
-                # Group interactions by stage
-                st.write("💡 Current stage interactions are highlighted in green")
-                selected_template = st.selectbox(
-                    "All Available Interactions:",
-                    ["Custom"] + [
-                        f"{interaction['template']} {'✨' if interaction['is_current'] else ''}"
-                        for interaction in all_interactions
-                    ],
-                    key="interaction_type_all",
-                    format_func=lambda x: x.replace("✨", " (Current Stage)") if "✨" in x else x
-                )
-                # Remove the ✨ if present
-                if selected_template != "Custom":
-                    selected_template = selected_template.replace(" ✨", "")
-            
-            else:  # By Category
-                # Create category mapping
-                interaction_categories = {
-                    "Basic Care (0-6 months) 👶": [t for t in all_interactions 
-                        if t["stage"] in ["NEWBORN", "EARLY_INFANCY"]],
-                    "Early Development (6-24 months) 🚶": [t for t in all_interactions 
-                        if t["stage"] in ["LATE_INFANCY", "EARLY_TODDLER", "LATE_TODDLER"]],
-                    "Preschool Learning (2-4 years) 📚": [t for t in all_interactions 
-                        if t["stage"] in ["EARLY_PRESCHOOL", "LATE_PRESCHOOL"]],
-                    "Early Education (4-7 years) 🎓": [t for t in all_interactions 
-                        if t["stage"] in ["EARLY_CHILDHOOD", "MIDDLE_CHILDHOOD", "LATE_CHILDHOOD"]],
-                    "Elementary Development (7-11 years) 🏫": [t for t in all_interactions 
-                        if t["stage"] in ["EARLY_ELEMENTARY", "MIDDLE_ELEMENTARY", "LATE_ELEMENTARY"]],
-                    "Adolescent Growth (11-18 years) 🌱": [t for t in all_interactions 
-                        if t["stage"] in ["EARLY_ADOLESCENCE", "MIDDLE_ADOLESCENCE", "LATE_ADOLESCENCE"]],
-                    "Adult Development (18+ years) 🌟": [t for t in all_interactions 
-                        if t["stage"] in ["YOUNG_ADULT", "MATURE_ADULT"]]
-                }
-                
-                # Category selection
-                selected_category = st.selectbox(
-                    "Select Age Category:",
-                    list(interaction_categories.keys()),
-                    key="category_select"
-                )
-                
-                # Show interactions for selected category
-                st.write("💡 Current stage interactions are highlighted in green")
-                selected_template = st.selectbox(
-                    f"Interactions for {selected_category}:",
-                    ["Custom"] + [
-                        f"{interaction['template']} {'✨' if interaction['is_current'] else ''}"
-                        for interaction in interaction_categories[selected_category]
-                    ],
-                    key="interaction_type_category",
-                    format_func=lambda x: x.replace("✨", " (Current Stage)") if "✨" in x else x
-                )
-                # Remove the ✨ if present
-                if selected_template != "Custom":
-                    selected_template = selected_template.replace(" ✨", "")
-
-            # Input field
-            if selected_template == "Custom":
-                user_input = st.text_input(
-                    "Say something to the child:", 
-                    key="user_input"
-                )
-            else:
-                # Extract the action part from the template
-                action = selected_template.split("] ")[0] + "]"
-                user_input = st.text_input(
-                    "Say something to the child:",
-                    value=action,
-                    key="user_input"
-                )
-
-            # Add a warning if using interaction from a different stage
-            if selected_template != "Custom":
-                template_stage = next(
-                    (interaction["stage"] for interaction in all_interactions 
-                     if interaction["template"] == selected_template),
-                    None
-                )
-                if template_stage and template_stage != st.session_state.child.curriculum.current_stage.name:
-                    st.warning(f"⚠️ This interaction is designed for the {template_stage.replace('_', ' ').title()} stage. Current stage is {st.session_state.child.curriculum.current_stage.name.replace('_', ' ').title()}. Adjust your approach accordingly.")
-
-            col1, col2 = st.columns([3, 1])
-            with col2:
-                st.write("")
-                st.write("")
-                interact_button = st.button(
-                    "Interact", 
-                    use_container_width=True,
-                    key="interact_button"
-                )
-            
-            if interact_button and user_input:
-                handle_interaction()
-            
-            # Add debug history panel
-            if debug_mode and st.session_state.conversation_history:
-                st.subheader("🔍 Debug: Interaction History")
-                for idx, interaction in enumerate(reversed(st.session_state.conversation_history[-5:])):
-                    with st.expander(f"Interaction {len(st.session_state.conversation_history)-idx}", expanded=False):
-                        st.json(interaction)
-                        if hasattr(st.session_state.child, 'decision_history'):
-                            st.write("Decision History for this interaction:", 
-                                   st.session_state.child.decision_history[-(idx+1):])
-            
-            # Display recent interactions
-            st.subheader("Recent Interactions")
-            for interaction in reversed(st.session_state.conversation_history[-3:]):
-                with st.expander(
-                    f"{interaction['timestamp'].strftime('%H:%M:%S')} - {interaction['stage']}", 
-                    expanded=False
-                ):
-                    st.caption(f"Child feeling: {interaction['child_response']}")
-                    st.write("You:", interaction['user'])
-                    st.write("Mother:", interaction['assistant'])
-            
-            # Teaching History
-            st.subheader("Teaching History")
-            st.write("Recent Teaching Activities:")
-            for teaching in st.session_state.teaching_history[-5:]:
-                with st.expander(f"{teaching['date']} - {teaching['topic']}", expanded=False):
-                    st.write(f"Method: {teaching['method']}")
-                    st.write(f"Response: {teaching['response']}")
-                    st.write(f"Effectiveness: {teaching['effectiveness']}")
-        
-        with col2:
-            st.subheader("Mother's Adaptation")
-            # Show how mother's teaching style adapts
-            if st.session_state.teaching_history:
-                adaptation_fig = create_adaptation_chart()
-                st.plotly_chart(adaptation_fig, use_container_width=True)
-    
-    with tabs[2]:  # Development Tracking Tab
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Cognitive Development")
-            cognitive_fig = create_cognitive_development_chart()
-            st.plotly_chart(cognitive_fig, use_container_width=True)
-        
-        with col2:
-            st.subheader("Emotional Development")
-            emotional_fig = create_emotional_development_chart()
-            st.plotly_chart(emotional_fig, use_container_width=True)
-    
-    with tabs[3]:  # Milestones & Progress Tab
-        st.subheader("Development Milestones")
-        render_milestone_timeline()
-        
-        # Add the new development progress section
+    with tabs[0]:  # Development Progress tab
+        st.subheader("Development Progress")
         render_development_progress()
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("Learning Achievements")
-            render_learning_achievements()
-        
-        with col2:
-            st.subheader("Next Milestones")
-            render_upcoming_milestones()
     
-    with tabs[4]:  # Analytics Tab
-        st.subheader("Development Analytics")
+    with tabs[1]:  # Emotional State tab
+        st.subheader("Current Emotional State")
         
-        # Add Event Logs
-        render_event_logs()
+        # Create two columns for emotional state visualization
+        col1, col2 = st.columns([2, 1])
         
-        # Add Sentience Metrics
-        render_sentience_metrics()
-        
-        # Complexity Growth Over Time
-        st.subheader("Complexity Growth")
-        complexity_fig = create_complexity_growth_chart()
-        st.plotly_chart(complexity_fig, use_container_width=True)
-        
-        # Learning Rate Analysis
-        col1, col2 = st.columns(2)
         with col1:
-            st.subheader("Learning Rate")
+            # Render emotional radar chart
+            radar_fig = create_emotion_radar_chart(st.session_state.child.emotional_state)
+            st.plotly_chart(radar_fig, use_container_width=True)
+            
+        with col2:
+            # Display dominant emotions
+            st.write("### Dominant Emotions")
+            # Convert tensor to EmotionalState if needed
+            emotional_state = st.session_state.child.emotional_state
+            if isinstance(emotional_state, torch.Tensor):
+                emotional_state = EmotionalState(
+                    happiness=float(emotional_state[0]),
+                    sadness=float(emotional_state[1]),
+                    anger=float(emotional_state[2]),
+                    fear=float(emotional_state[3]),
+                    surprise=float(emotional_state[4]) if len(emotional_state) > 4 else 0.0,
+                    disgust=float(emotional_state[5]) if len(emotional_state) > 5 else 0.0,
+                    trust=float(emotional_state[6]) if len(emotional_state) > 6 else 0.5,
+                    anticipation=float(emotional_state[7]) if len(emotional_state) > 7 else 0.5
+                )
+            dominant = emotional_state.get_dominant_emotions()
+            for emotion, intensity in dominant:
+                st.write(f"- {emotion}: {intensity:.2%}")
+        
+        # Render complexity gauge below emotional state
+        st.subheader("Development Complexity")
+        render_complexity_gauge()
+    
+    with tabs[2]:  # Learning Analytics tab
+        st.subheader("Learning Analytics")
+        
+        # Create analytics charts
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            complexity_fig = create_complexity_growth_chart()
+            st.plotly_chart(complexity_fig, use_container_width=True)
+            
             learning_fig = create_learning_rate_chart()
             st.plotly_chart(learning_fig, use_container_width=True)
         
         with col2:
-            st.subheader("Decision Making")
             decision_fig = create_decision_analysis_chart()
             st.plotly_chart(decision_fig, use_container_width=True)
-
-    with tabs[5]:  # Warning System tab
-        render_warning_dashboard()
-
+    
+    with tabs[3]:  # Interaction History tab
+        st.subheader("Interaction History")
+        render_event_logs()
+    
+    with tabs[4]:  # System Status tab
+        st.subheader("System Status")
+        render_checkpoint_info()
+    
     # Footer with save/load functionality
     st.divider()
-    save_load_cols = st.columns([1, 1, 2])
+    col1, col2 = st.columns(2)
     
-    with save_load_cols[0]:
-        if st.button("Save State", key="save_state_button", use_container_width=True):
-            try:
-                # Create a timestamp for the filename
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                
-                # Convert datetime objects to ISO format strings for saving
-                conversation_history = [
-                    {**item, 'timestamp': item['timestamp'].isoformat()}
-                    for item in st.session_state.conversation_history
-                ]
-                
-                teaching_history = [
-                    {**item, 'date': item['date'].isoformat()}
-                    for item in st.session_state.teaching_history
-                ]
-                
-                # Save both child and session state
-                save_data = {
-                    'child_state_dict': st.session_state.child.brain.state_dict(),
-                    'emotional_state': {
-                        'happiness': st.session_state.child.emotional_state.happiness,
-                        'sadness': st.session_state.child.emotional_state.sadness,
-                        'anger': st.session_state.child.emotional_state.anger,
-                        'fear': st.session_state.child.emotional_state.fear
-                    },
-                    'birth_date': st.session_state.birth_time.isoformat(),
-                    'conversation_history': conversation_history,
-                    'emotional_history': [
-                        e.tolist() if isinstance(e, torch.Tensor) else [
-                            e.happiness, e.sadness, e.anger, e.fear
-                        ] if hasattr(e, 'happiness') else e 
-                        for e in st.session_state.emotional_history
-                    ],
-                    'learning_history': st.session_state.learning_history,
-                    'milestone_history': st.session_state.milestone_history,
-                    'complexity_history': st.session_state.complexity_history,
-                    'teaching_history': teaching_history,
-                    'development_metrics': st.session_state.development_metrics,
-                    'current_stage': st.session_state.child.curriculum.current_stage.name,
-                    'save_info': {
-                        'app_version': '1.0',
-                        'save_time': datetime.now().isoformat(),
-                        'developmental_stage': st.session_state.child.curriculum.current_stage.name,
-                        'total_interactions': len(st.session_state.conversation_history)
-                    }
-                }
-                
-                # Create save directory if it doesn't exist
-                save_dir = "checkpoints"
-                if not os.path.exists(save_dir):
-                    os.makedirs(save_dir)
-                
-                save_path = os.path.join(save_dir, f"digital_child_state_{timestamp}.pth")
-                torch.save(save_data, save_path)
-                st.success(f"Full state saved to {save_path}")
-                
-                # Save a backup copy
-                backup_path = os.path.join(save_dir, "digital_child_state_latest.pth")
-                torch.save(save_data, backup_path)
-                st.info("Backup saved as 'digital_child_state_latest.pth'")
-                
-                # Show checkpoint verification
-                render_checkpoint_info()
-                
-            except Exception as e:
-                st.error(f"Error saving state: {str(e)}")
-                if st.sidebar.checkbox("Debug Mode", value=False):
-                    st.exception(e)
+    with col1:
+        if st.button("💾 Save Current State"):
+            st.session_state.child.save_state()
+            st.success("State saved successfully!")
     
-    with save_load_cols[1]:
-        uploaded_file = st.file_uploader("Load State", type="pth", key="state_file_uploader")
-        if uploaded_file is not None:
+    with col2:
+        if st.button("🔄 Load Last State"):
             try:
-                # Add datetime to safe globals
-                torch.serialization.add_safe_globals(['datetime'])
-                
-                # Load with weights_only=False to handle datetime objects
-                save_data = torch.load(
-                    uploaded_file,
-                    weights_only=False,
-                    map_location=st.session_state.child.device
-                )
-                
-                # Display save information if available
-                if 'save_info' in save_data:
-                    info = save_data['save_info']
-                    st.info(f"""
-                    **Checkpoint Information:**
-                    - Saved on: {datetime.fromisoformat(info['save_time']).strftime('%Y-%m-%d %H:%M:%S')}
-                    - Stage: {info['developmental_stage']}
-                    - Total Interactions: {info['total_interactions']}
-                    """)
-                
-                # Load child state
-                try:
-                    st.session_state.child.brain.load_state_dict(save_data['child_state_dict'])
-                except Exception as model_e:
-                    st.warning(f"Could not load model state due to architecture mismatch: {str(model_e)}")
-                    st.info("Continuing with fresh model weights but preserving other state data.")
-                
-                # Restore emotional state
-                if isinstance(save_data['emotional_state'], dict):
-                    emotional_values = [
-                        save_data['emotional_state']['happiness'],
-                        save_data['emotional_state']['sadness'],
-                        save_data['emotional_state']['anger'],
-                        save_data['emotional_state']['fear']
-                    ]
-                    st.session_state.child.emotional_state = torch.tensor(
-                        emotional_values,
-                        device=st.session_state.child.device
-                    )
-                else:
-                    st.session_state.child.emotional_state = torch.tensor(
-                        save_data['emotional_state'],
-                        device=st.session_state.child.device
-                    )
-                
-                # Restore birth time
-                st.session_state.birth_time = datetime.fromisoformat(save_data['birth_date'])
-                
-                # Load session state with datetime conversion
-                st.session_state.conversation_history = [
-                    {**item, 'timestamp': datetime.fromisoformat(item['timestamp']) 
-                     if isinstance(item['timestamp'], str) else item['timestamp']}
-                    for item in save_data['conversation_history']
-                ]
-                
-                # Convert emotional history tensors
-                st.session_state.emotional_history = [
-                    torch.tensor(e, device=st.session_state.child.device) 
-                    if isinstance(e, list) else e 
-                    for e in save_data['emotional_history']
-                ]
-                
-                st.session_state.learning_history = save_data['learning_history']
-                st.session_state.milestone_history = save_data['milestone_history']
-                st.session_state.complexity_history = save_data['complexity_history']
-                
-                # Convert teaching history timestamps
-                st.session_state.teaching_history = [
-                    {**item, 'date': datetime.fromisoformat(item['date']) 
-                     if isinstance(item['date'], str) else item['date']}
-                    for item in save_data['teaching_history']
-                ]
-                
-                st.session_state.development_metrics = save_data['development_metrics']
-                
-                # Restore current stage
-                if 'current_stage' in save_data:
-                    st.session_state.child.curriculum.current_stage = DevelopmentalStage[save_data['current_stage']]
-                
-                st.success("Full state loaded successfully!")
-                st.info("Please refresh the page to see all restored state.")
+                st.session_state.child._load_state()
+                st.success("State loaded successfully!")
             except Exception as e:
                 st.error(f"Error loading state: {str(e)}")
-                if st.sidebar.checkbox("Debug Mode", key="debug_mode_load", value=False):
-                    st.exception(e)
-                st.info("If you trust this file, try restarting the application and loading again.")
-    
-    with save_load_cols[2]:
-        # Add checkpoint verification to the info panel
-        render_checkpoint_info()
-        st.info("Save/Load functionality preserves all history and development progress.")
 
     # Add a new section for logs in the sidebar
     with st.sidebar:

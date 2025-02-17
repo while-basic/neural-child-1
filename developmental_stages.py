@@ -38,44 +38,275 @@ class StageCharacteristics:
 # Stage definitions moved from config.py
 STAGE_DEFINITIONS = {
     DevelopmentalStage.NEWBORN: {
-        'age_range': (0, 3),
+        'age_range': (0, 3),  # months
         'complexity_range': (0.1, 0.2),
         'emotional_range': (0.6, 0.8),
-        'required_skills': ['basic reflexes', 'crying'],
+        'required_skills': ['basic reflexes', 'crying', 'sucking'],
         'learning_focus': ['sensory processing', 'basic motor skills'],
         'current_milestones': ['Basic reflexes', 'Can cry to express needs'],
         'upcoming_milestones': [
             'Recognize mother\'s voice',
             'Follow moving objects with eyes',
-            'Respond to loud sounds'
-        ]
+            'Respond to loud sounds',
+            'Make cooing sounds'
+        ],
+        'trust_emphasis': 0.8
     },
     DevelopmentalStage.EARLY_INFANCY: {
         'age_range': (3, 6),
         'complexity_range': (0.2, 0.3),
         'emotional_range': (0.5, 0.7),
-        'required_skills': ['object permanence', 'basic gestures'],
+        'required_skills': ['object permanence', 'basic gestures', 'cooing'],
         'learning_focus': ['motor development', 'social bonding'],
-        'current_milestones': ['Social smiling', 'Track moving objects'],
+        'current_milestones': ['Social smiling', 'Track moving objects', 'Respond to sounds'],
         'upcoming_milestones': [
             'Sitting without support',
             'Object manipulation',
-            'Babbling'
-        ]
+            'Babbling',
+            'Recognize familiar faces'
+        ],
+        'trust_emphasis': 0.7
+    },
+    DevelopmentalStage.LATE_INFANCY: {
+        'age_range': (6, 12),
+        'complexity_range': (0.3, 0.4),
+        'emotional_range': (0.4, 0.6),
+        'required_skills': ['crawling', 'babbling', 'object manipulation'],
+        'learning_focus': ['mobility', 'communication'],
+        'current_milestones': ['Crawling', 'Object permanence', 'Babbling'],
+        'upcoming_milestones': [
+            'First words',
+            'Standing with support',
+            'Pincer grasp',
+            'Wave bye-bye'
+        ],
+        'trust_emphasis': 0.6
+    },
+    DevelopmentalStage.EARLY_TODDLER: {
+        'age_range': (12, 18),
+        'complexity_range': (0.4, 0.5),
+        'emotional_range': (0.3, 0.5),
+        'required_skills': ['walking', 'first words', 'feeding self'],
+        'learning_focus': ['language', 'independence'],
+        'current_milestones': ['Walking independently', 'Several clear words', 'Self-feeding'],
+        'upcoming_milestones': [
+            'Two-word phrases',
+            'Run steadily',
+            'Stack blocks',
+            'Use spoon'
+        ],
+        'trust_emphasis': 0.5
+    },
+    DevelopmentalStage.LATE_TODDLER: {
+        'age_range': (18, 36),
+        'complexity_range': (0.5, 0.6),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['running', 'short sentences', 'symbolic play'],
+        'learning_focus': ['social skills', 'imagination'],
+        'current_milestones': ['Running', 'Short sentences', 'Imaginative play'],
+        'upcoming_milestones': [
+            'Full sentences',
+            'Toilet training',
+            'Share toys',
+            'Draw shapes'
+        ],
+        'trust_emphasis': 0.5
+    },
+    DevelopmentalStage.EARLY_PRESCHOOL: {
+        'age_range': (36, 48),
+        'complexity_range': (0.6, 0.7),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['conversation', 'drawing', 'group play'],
+        'learning_focus': ['creativity', 'social interaction'],
+        'current_milestones': ['Basic conversations', 'Draw simple shapes', 'Group play'],
+        'upcoming_milestones': [
+            'Complex sentences',
+            'Count to 20',
+            'Name colors',
+            'Ride tricycle'
+        ],
+        'trust_emphasis': 0.4
+    },
+    DevelopmentalStage.LATE_PRESCHOOL: {
+        'age_range': (48, 60),
+        'complexity_range': (0.7, 0.8),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['storytelling', 'basic math', 'rule following'],
+        'learning_focus': ['pre-academic skills', 'rule understanding'],
+        'current_milestones': ['Tell stories', 'Count to 20', 'Follow rules'],
+        'upcoming_milestones': [
+            'Write letters',
+            'Simple addition',
+            'Read sight words',
+            'Complex problem-solving'
+        ],
+        'trust_emphasis': 0.4
+    },
+    DevelopmentalStage.EARLY_CHILDHOOD: {
+        'age_range': (60, 72),
+        'complexity_range': (0.8, 0.85),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['reading basics', 'writing', 'team play'],
+        'learning_focus': ['academic foundations', 'teamwork'],
+        'current_milestones': ['Read simple words', 'Write name', 'Team games'],
+        'upcoming_milestones': [
+            'Read sentences',
+            'Basic math operations',
+            'Scientific thinking',
+            'Complex social play'
+        ],
+        'trust_emphasis': 0.4
+    },
+    DevelopmentalStage.MIDDLE_CHILDHOOD: {
+        'age_range': (72, 96),
+        'complexity_range': (0.85, 0.9),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['reading comprehension', 'mathematical operations', 'social navigation'],
+        'learning_focus': ['academic skills', 'social competence'],
+        'current_milestones': ['Read fluently', 'Basic math', 'Complex friendships'],
+        'upcoming_milestones': [
+            'Abstract thinking',
+            'Advanced math',
+            'Independent research',
+            'Leadership skills'
+        ],
+        'trust_emphasis': 0.3
+    },
+    DevelopmentalStage.LATE_CHILDHOOD: {
+        'age_range': (96, 120),
+        'complexity_range': (0.9, 0.95),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['abstract thinking', 'complex problem solving', 'emotional regulation'],
+        'learning_focus': ['critical thinking', 'emotional intelligence'],
+        'current_milestones': ['Abstract reasoning', 'Complex math', 'Emotional awareness'],
+        'upcoming_milestones': [
+            'Scientific method',
+            'Advanced writing',
+            'Complex analysis',
+            'Peer leadership'
+        ],
+        'trust_emphasis': 0.3
+    },
+    DevelopmentalStage.EARLY_ELEMENTARY: {
+        'age_range': (72, 96),
+        'complexity_range': (0.8, 0.85),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['basic literacy', 'numeracy', 'classroom behavior'],
+        'learning_focus': ['foundational academics', 'classroom skills'],
+        'current_milestones': ['Read and write', 'Basic math', 'Follow instructions'],
+        'upcoming_milestones': [
+            'Reading comprehension',
+            'Math operations',
+            'Scientific inquiry',
+            'Writing composition'
+        ],
+        'trust_emphasis': 0.3
+    },
+    DevelopmentalStage.MIDDLE_ELEMENTARY: {
+        'age_range': (96, 120),
+        'complexity_range': (0.85, 0.9),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['reading comprehension', 'mathematical thinking', 'research skills'],
+        'learning_focus': ['academic depth', 'independent learning'],
+        'current_milestones': ['Comprehend text', 'Problem solving', 'Basic research'],
+        'upcoming_milestones': [
+            'Critical analysis',
+            'Advanced math concepts',
+            'Independent projects',
+            'Presentation skills'
+        ],
+        'trust_emphasis': 0.3
+    },
+    DevelopmentalStage.LATE_ELEMENTARY: {
+        'age_range': (120, 144),
+        'complexity_range': (0.9, 0.95),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['critical thinking', 'advanced math', 'project management'],
+        'learning_focus': ['analytical skills', 'project-based learning'],
+        'current_milestones': ['Critical thinking', 'Complex math', 'Project planning'],
+        'upcoming_milestones': [
+            'Research methods',
+            'Advanced analysis',
+            'Leadership roles',
+            'Complex projects'
+        ],
+        'trust_emphasis': 0.3
+    },
+    DevelopmentalStage.EARLY_ADOLESCENCE: {
+        'age_range': (144, 168),
+        'complexity_range': (0.95, 0.97),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['abstract reasoning', 'emotional awareness', 'social navigation'],
+        'learning_focus': ['identity development', 'social understanding'],
+        'current_milestones': ['Abstract thinking', 'Emotional insight', 'Social skills'],
+        'upcoming_milestones': [
+            'Personal identity',
+            'Career exploration',
+            'Moral reasoning',
+            'Complex relationships'
+        ],
+        'trust_emphasis': 0.3
+    },
+    DevelopmentalStage.MIDDLE_ADOLESCENCE: {
+        'age_range': (168, 192),
+        'complexity_range': (0.97, 0.98),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['self-reflection', 'goal setting', 'interpersonal skills'],
+        'learning_focus': ['future planning', 'personal values'],
+        'current_milestones': ['Self-awareness', 'Goal planning', 'Relationship building'],
+        'upcoming_milestones': [
+            'Career direction',
+            'Value system',
+            'Independence',
+            'Leadership roles'
+        ],
+        'trust_emphasis': 0.3
+    },
+    DevelopmentalStage.LATE_ADOLESCENCE: {
+        'age_range': (192, 216),
+        'complexity_range': (0.98, 0.99),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['independence', 'decision making', 'life planning'],
+        'learning_focus': ['autonomy', 'life skills'],
+        'current_milestones': ['Independent decisions', 'Life planning', 'Complex relationships'],
+        'upcoming_milestones': [
+            'Career preparation',
+            'Independent living',
+            'Adult relationships',
+            'Financial planning'
+        ],
+        'trust_emphasis': 0.3
+    },
+    DevelopmentalStage.YOUNG_ADULT: {
+        'age_range': (216, 360),
+        'complexity_range': (0.99, 1.0),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['career development', 'relationship building', 'financial management'],
+        'learning_focus': ['professional growth', 'life management'],
+        'current_milestones': ['Career progress', 'Stable relationships', 'Financial independence'],
+        'upcoming_milestones': [
+            'Career advancement',
+            'Long-term planning',
+            'Complex problem solving',
+            'Leadership development'
+        ],
+        'trust_emphasis': 0.3
+    },
+    DevelopmentalStage.MATURE_ADULT: {
+        'age_range': (360, 600),
+        'complexity_range': (1.0, 1.0),
+        'emotional_range': (0.2, 0.4),
+        'required_skills': ['wisdom', 'mentorship', 'life mastery'],
+        'learning_focus': ['wisdom development', 'legacy building'],
+        'current_milestones': ['Life wisdom', 'Mentoring others', 'Complex understanding'],
+        'upcoming_milestones': [
+            'Legacy creation',
+            'Knowledge transfer',
+            'Societal contribution',
+            'Continued growth'
+        ],
+        'trust_emphasis': 0.3
     }
-}
-
-# Add default values for any undefined stages
-for stage in DevelopmentalStage:
-    if stage not in STAGE_DEFINITIONS:
-        STAGE_DEFINITIONS[stage] = {
-            'age_range': (0, 0),
-            'complexity_range': (0.1, 1.0),
-            'emotional_range': (0.0, 1.0),
-            'required_skills': ['basic development'],
-            'learning_focus': ['general development'],
-            'current_milestones': ['Stage not fully defined'],
-            'upcoming_milestones': ['Stage not fully defined']
         }
 
 class DevelopmentalSystem:
@@ -157,6 +388,96 @@ class DevelopmentalSystem:
                 'Making distinct sounds',
                 'Showing emotions',
                 'Recognizing familiar faces'
+            ],
+            DevelopmentalStage.EARLY_TODDLER: [
+                'Walking with support',
+                'Using single words',
+                'Following simple commands',
+                'Exploring objects'
+            ],
+            DevelopmentalStage.LATE_TODDLER: [
+                'Running and climbing',
+                'Using short phrases',
+                'Beginning imaginative play',
+                'Showing independence'
+            ],
+            DevelopmentalStage.EARLY_PRESCHOOL: [
+                'Speaking in sentences',
+                'Following complex instructions',
+                'Engaging in pretend play',
+                'Basic problem solving'
+            ],
+            DevelopmentalStage.LATE_PRESCHOOL: [
+                'Complex conversations',
+                'Early reading skills',
+                'Basic math concepts',
+                'Advanced social play'
+            ],
+            DevelopmentalStage.EARLY_CHILDHOOD: [
+                'Reading simple words',
+                'Writing letters',
+                'Basic addition',
+                'Group activities'
+            ],
+            DevelopmentalStage.MIDDLE_CHILDHOOD: [
+                'Reading comprehension',
+                'Mathematical operations',
+                'Scientific thinking',
+                'Team collaboration'
+            ],
+            DevelopmentalStage.LATE_CHILDHOOD: [
+                'Abstract reasoning',
+                'Complex problem solving',
+                'Critical thinking',
+                'Social awareness'
+            ],
+            DevelopmentalStage.EARLY_ELEMENTARY: [
+                'Basic academic skills',
+                'Classroom participation',
+                'Following schedules',
+                'Peer relationships'
+            ],
+            DevelopmentalStage.MIDDLE_ELEMENTARY: [
+                'Independent learning',
+                'Research skills',
+                'Project planning',
+                'Leadership emergence'
+            ],
+            DevelopmentalStage.LATE_ELEMENTARY: [
+                'Advanced academics',
+                'Critical analysis',
+                'Complex projects',
+                'Team leadership'
+            ],
+            DevelopmentalStage.EARLY_ADOLESCENCE: [
+                'Identity exploration',
+                'Abstract thinking',
+                'Emotional development',
+                'Peer relationships'
+            ],
+            DevelopmentalStage.MIDDLE_ADOLESCENCE: [
+                'Career exploration',
+                'Value development',
+                'Complex reasoning',
+                'Social dynamics'
+            ],
+            DevelopmentalStage.LATE_ADOLESCENCE: [
+                'Life planning',
+                'Decision making',
+                'Independence',
+                'Relationship building'
+            ],
+            DevelopmentalStage.YOUNG_ADULT: [
+                'Career development',
+                'Financial planning',
+                'Relationship management',
+                'Life skills mastery'
+            ],
+            DevelopmentalStage.MATURE_ADULT: [
+                'Wisdom application',
+                'Mentoring others',
+                'Legacy building',
+                'Continued growth'
             ]
         }.get(self.current_stage, ['Basic development'])
         
