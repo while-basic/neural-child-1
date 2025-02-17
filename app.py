@@ -554,6 +554,23 @@ def render_upcoming_milestones():
         # Get current development status
         dev_status = st.session_state.child.curriculum.get_development_status()
         
+        # Ensure all required skills are initialized
+        required_skills = {
+            'motor_skills': 0.0,
+            'emotional_expression': 0.0,
+            'sound_response': 0.0,
+            'voice_recognition': 0.0,
+            'visual_tracking': 0.0,
+            'vocalization': 0.0,
+            'social_bonding': 0.0,
+            'object_permanence': 0.0
+        }
+        
+        # Update with actual progress where available
+        if 'skill_progress' in dev_status:
+            for skill, progress in dev_status['skill_progress'].items():
+                required_skills[skill] = progress
+        
         # Display current milestones with completion status
         st.write("Current Milestones:")
         current_milestones = stage_reqs.get('current_milestones', [])
@@ -570,9 +587,11 @@ def render_upcoming_milestones():
                 }
                 
                 if milestone in skill_mapping:
+                    # Safely get progress for each skill
+                    skills = skill_mapping[milestone]
                     progress = np.mean([
-                        dev_status['skill_progress'][skill]
-                        for skill in skill_mapping[milestone]
+                        required_skills.get(skill, 0.0)
+                        for skill in skills
                     ])
                 else:
                     progress = st.session_state.milestone_progress.get(milestone, 0.0)
@@ -601,9 +620,11 @@ def render_upcoming_milestones():
                 }
                 
                 if milestone in skill_mapping:
+                    # Safely get progress for each skill
+                    skills = skill_mapping[milestone]
                     progress = np.mean([
-                        dev_status['skill_progress'][skill]
-                        for skill in skill_mapping[milestone]
+                        required_skills.get(skill, 0.0)
+                        for skill in skills
                     ])
                 else:
                     progress = st.session_state.milestone_progress.get(milestone, 0.0)
