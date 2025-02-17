@@ -944,22 +944,138 @@ def render_sentience_metrics():
     fig.update_layout(height=300)
     st.plotly_chart(fig, use_container_width=True)
     
-    # Display factor breakdown
+    # Display factor breakdown with tooltips
     if st.session_state.sentience_history:
         latest = st.session_state.sentience_history[-1]['factors']
         col1, col2, col3 = st.columns(3)
         
+        metric_tooltips = {
+            'emotional_complexity': """
+            Emotional Complexity (Weight: 20%)
+            Measures the richness and variety of emotional experiences.
+            
+            Components:
+            - Emotional variance: How diverse the emotional states are
+            - Active emotions: Number of simultaneously active emotions
+            - Emotional mixing: Ability to experience complex, mixed emotions
+            
+            High scores indicate:
+            - Rich emotional life
+            - Ability to experience nuanced feelings
+            - Complex emotional responses to situations
+            """,
+            
+            'self_awareness': """
+            Self Awareness (Weight: 25%)
+            Measures the ability to recognize and understand one's own mental states.
+            
+            Components:
+            - Metacognitive processing: Understanding of own thoughts
+            - Emotional recognition: Ability to identify own emotions
+            - Self-reflection: Capacity for introspection
+            
+            High scores indicate:
+            - Strong sense of self
+            - Understanding of personal motivations
+            - Ability to learn from experiences
+            """,
+            
+            'decision_autonomy': """
+            Decision Autonomy (Weight: 15%)
+            Measures the ability to make independent and reasoned choices.
+            
+            Components:
+            - Decision variety: Range of different choices made
+            - Choice consistency: Pattern recognition in decision making
+            - Independent thinking: Ability to form unique responses
+            
+            High scores indicate:
+            - Independent decision making
+            - Consistent choice patterns
+            - Strategic thinking ability
+            """,
+            
+            'learning_adaptability': """
+            Learning Adaptability (Weight: 15%)
+            Measures the capacity to learn and adapt from experiences.
+            
+            Components:
+            - Learning rate: Speed of acquiring new knowledge
+            - Adaptation speed: Ability to adjust to new situations
+            - Knowledge retention: Long-term learning stability
+            
+            High scores indicate:
+            - Rapid learning capability
+            - Flexible adaptation to change
+            - Strong knowledge integration
+            """,
+            
+            'cognitive_complexity': """
+            Cognitive Complexity (Weight: 15%)
+            Measures the sophistication of thought processes and problem-solving.
+            
+            Components:
+            - Abstract thinking: Ability to handle complex concepts
+            - Pattern recognition: Identification of complex relationships
+            - Problem-solving depth: Sophistication of solutions
+            
+            High scores indicate:
+            - Advanced reasoning abilities
+            - Complex problem-solving skills
+            - Sophisticated thought patterns
+            """,
+            
+            'emotional_stability': """
+            Emotional Stability (Weight: 10%)
+            Measures the consistency and balance of emotional responses.
+            
+            Components:
+            - Emotional regulation: Control over emotional responses
+            - Response consistency: Predictability of emotional reactions
+            - Recovery speed: Ability to return to baseline state
+            
+            High scores indicate:
+            - Well-regulated emotions
+            - Balanced emotional responses
+            - Quick emotional recovery
+            """
+        }
+        
         with col1:
-            st.metric("Emotional Complexity", f"{latest['emotional_complexity']*100:.1f}%")
-            st.metric("Self Awareness", f"{latest['self_awareness']*100:.1f}%")
+            st.metric(
+                "Emotional Complexity",
+                f"{latest['emotional_complexity']*100:.1f}%",
+                help=metric_tooltips['emotional_complexity']
+            )
+            st.metric(
+                "Self Awareness",
+                f"{latest['self_awareness']*100:.1f}%",
+                help=metric_tooltips['self_awareness']
+            )
         
         with col2:
-            st.metric("Decision Autonomy", f"{latest['decision_autonomy']*100:.1f}%")
-            st.metric("Learning Adaptability", f"{latest['learning_adaptability']*100:.1f}%")
+            st.metric(
+                "Decision Autonomy",
+                f"{latest['decision_autonomy']*100:.1f}%",
+                help=metric_tooltips['decision_autonomy']
+            )
+            st.metric(
+                "Learning Adaptability",
+                f"{latest['learning_adaptability']*100:.1f}%",
+                help=metric_tooltips['learning_adaptability']
+            )
         
         with col3:
-            st.metric("Cognitive Complexity", f"{latest['cognitive_complexity']*100:.1f}%")
-            st.metric("Emotional Stability", f"{latest['emotional_stability']*100:.1f}%")
+            st.metric(
+                "Cognitive Complexity",
+                f"{latest['cognitive_complexity']*100:.1f}%",
+                help=metric_tooltips['cognitive_complexity']
+            )
+            st.metric(
+                "Emotional Stability",
+                f"{latest['emotional_stability']*100:.1f}%",
+                help=metric_tooltips['emotional_stability']
+            )
         
         # Show sentience progression chart
         st.subheader("Sentience Development Over Time")
