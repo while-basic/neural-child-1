@@ -93,6 +93,27 @@ class DevelopmentalSystem:
         self.stage_duration = 0
         self.stage_history = []
         
+        # Add detailed skill tracking
+        self.skill_progress = {
+            'voice_recognition': 0.0,
+            'visual_tracking': 0.0,
+            'sound_response': 0.0,
+            'vocalization': 0.0,
+            'object_permanence': 0.0,
+            'social_bonding': 0.0,
+            'motor_skills': 0.0,
+            'emotional_expression': 0.0
+        }
+        
+        # Add interaction tracking
+        self.interaction_counts = {
+            'mother_voice': 0,
+            'visual_stimuli': 0,
+            'sound_stimuli': 0,
+            'social_engagement': 0,
+            'motor_practice': 0
+        }
+    
     def get_stage_characteristics(self) -> StageCharacteristics:
         """Get the characteristics of the current developmental stage"""
         stage_def = STAGE_DEFINITIONS.get(self.current_stage)
@@ -152,6 +173,72 @@ class DevelopmentalSystem:
             'trust_emphasis': stage_def.get('trust_emphasis', 0.5)
         }
     
+    def get_development_status(self) -> Dict[str, Any]:
+        """Get detailed development status for current stage"""
+        try:
+            stage_progress = self.get_stage_progress()
+            stage_reqs = self.get_stage_requirements()
+            
+            return {
+                'current_stage': self.current_stage.name,
+                'stage_duration': self.stage_duration,
+                'skill_progress': self.skill_progress,
+                'interaction_counts': self.interaction_counts,
+                'metrics': self.stage_metrics,
+                'ready_for_progression': self.check_stage_progression(),
+                'stage_progress': stage_progress,
+                'current_milestones': stage_reqs.get('current_milestones', []),
+                'upcoming_milestones': stage_reqs.get('upcoming_milestones', [])
+            }
+        except Exception as e:
+            print(f"Error getting development status: {str(e)}")
+            # Return a minimal status if there's an error
+            return {
+                'current_stage': self.current_stage.name,
+                'stage_duration': self.stage_duration,
+                'skill_progress': self.skill_progress,
+                'interaction_counts': self.interaction_counts,
+                'metrics': self.stage_metrics,
+                'ready_for_progression': False
+            }
+    
+    def update_skill_progress(self, interaction_type: str, success_rate: float):
+        """Update skill progress based on interaction type and success"""
+        # Map interactions to skills
+        skill_mapping = {
+            'TALK': ['voice_recognition', 'sound_response'],
+            'LOOK': ['visual_tracking'],
+            'SMILE': ['social_bonding', 'emotional_expression'],
+            'PLAY': ['object_permanence', 'motor_skills'],
+            'COMFORT': ['social_bonding', 'emotional_expression'],
+            'FEED': ['motor_skills'],
+            'SLEEP': ['emotional_regulation'],
+            'SING': ['sound_response', 'emotional_expression']
+        }
+        
+        # Update relevant skills
+        if interaction_type.upper() in skill_mapping:
+            for skill in skill_mapping[interaction_type.upper()]:
+                if skill in self.skill_progress:
+                    current = self.skill_progress[skill]
+                    # Weighted update with more emphasis on recent performance
+                    self.skill_progress[skill] = 0.7 * current + 0.3 * success_rate
+                
+        # Track interaction counts
+        interaction_category = {
+            'TALK': 'mother_voice',
+            'LOOK': 'visual_stimuli',
+            'SOUND': 'sound_stimuli',
+            'SMILE': 'social_engagement',
+            'PLAY': 'motor_practice',
+            'SING': 'mother_voice',
+            'COMFORT': 'social_engagement',
+            'FEED': 'motor_practice'
+        }.get(interaction_type.upper())
+        
+        if interaction_category and interaction_category in self.interaction_counts:
+            self.interaction_counts[interaction_category] += 1
+    
     def update_stage(self, metrics: Dict[str, float], interactions_per_stage: int = 100):
         """Update stage metrics and check for progression"""
         # Update internal metrics
@@ -161,12 +248,14 @@ class DevelopmentalSystem:
                 
         self.stage_duration += 1
         
-        # Check if ready to progress
-        if self.can_progress(interactions_per_stage):
+        # Check if ready to progress with enhanced criteria
+        if self.check_stage_progression():
             self.consecutive_successes += 1
             if self.consecutive_successes >= 3:  # Need 3 consecutive successful evaluations
                 self._advance_stage()
                 self.consecutive_successes = 0
+                # Reset interaction counts for new stage
+                self.interaction_counts = {key: 0 for key in self.interaction_counts}
         else:
             self.consecutive_successes = 0
             
@@ -233,3 +322,45 @@ class DevelopmentalSystem:
             ),
             'ready_for_progression': self.can_progress(interactions_per_stage)
         }
+    
+    def check_stage_progression(self) -> bool:
+        """Check if ready to progress to next stage with enhanced criteria"""
+        if self.current_stage == DevelopmentalStage.NEWBORN:
+            # Check core NEWBORN skills
+            basic_skills_mastered = (
+                self.skill_progress['voice_recognition'] > 0.7 and
+                self.skill_progress['visual_tracking'] > 0.7 and
+                self.skill_progress['sound_response'] > 0.6 and
+                self.skill_progress['vocalization'] > 0.5
+            )
+            
+            # Check interaction diversity
+            sufficient_interactions = all(
+                count >= 10 for count in self.interaction_counts.values()
+            )
+            
+            # Check emotional development
+            emotional_readiness = (
+                self.stage_metrics['emotional_regulation'] > 0.6 and
+                self.stage_metrics['social_skills'] > 0.5
+            )
+            
+            # Calculate overall development score
+            development_score = (
+                self.skill_progress['voice_recognition'] * 0.2 +
+                self.skill_progress['visual_tracking'] * 0.2 +
+                self.skill_progress['sound_response'] * 0.2 +
+                self.skill_progress['social_bonding'] * 0.2 +
+                self.stage_metrics['emotional_regulation'] * 0.1 +
+                self.stage_metrics['social_skills'] * 0.1
+            )
+            
+            return (
+                basic_skills_mastered and
+                sufficient_interactions and
+                emotional_readiness and
+                development_score > 0.7 and
+                self.stage_duration >= 50  # Minimum interactions required
+            )
+        
+        return self.can_progress()

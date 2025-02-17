@@ -1,4 +1,5 @@
 import streamlit as st
+import numpy as np
 import torch
 import time
 from datetime import datetime
@@ -6,8 +7,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
 import pandas as pd
-import numpy as np
-from developmental_stages import DevelopmentalStage, DevelopmentalSystem
 import json
 import torch.serialization
 import requests
@@ -15,6 +14,7 @@ import sseclient
 import threading
 import queue
 import os
+from developmental_stages import DevelopmentalStage, DevelopmentalSystem
 
 # Define stage templates for interactions
 stage_templates = {
@@ -149,36 +149,122 @@ def validate_stage_definitions():
             missing_stages.append(stage.name)
     return missing_stages
 
+def initialize_new_session():
+    """Initialize a new session with default values"""
+    # Validate stage definitions
+    missing_stages = validate_stage_definitions()
+    if missing_stages:
+        st.error(f"Missing stage definitions for: {', '.join(missing_stages)}")
+        st.stop()
+    
+    st.session_state.child = DigitalChild()
+    st.session_state.birth_time = datetime.now()  # Store birth time in session state
+    st.session_state.mother = MotherLLM()
+    st.session_state.conversation_history = []
+    st.session_state.emotional_history = []
+    st.session_state.learning_history = []
+    st.session_state.milestone_history = []
+    st.session_state.complexity_history = []
+    st.session_state.teaching_history = []
+    st.session_state.development_metrics = {
+        'success_rate': [],
+        'abstraction': [],
+        'self_awareness': [],
+        'complexity_level': [],
+        'emotional_stability': []
+    }
+    st.session_state.initialized = True
+    st.info("New session initialized")
+
 # Initialize session state
 if DigitalChild is not None:
     if 'initialized' not in st.session_state:
         try:
-            # Validate stage definitions
-            missing_stages = validate_stage_definitions()
-            if missing_stages:
-                st.error(f"Missing stage definitions for: {', '.join(missing_stages)}")
-                st.stop()
-            
-            st.session_state.child = DigitalChild()
-            st.session_state.birth_time = datetime.now()  # Store birth time in session state
-            st.session_state.mother = MotherLLM()
-            st.session_state.conversation_history = []
-            st.session_state.emotional_history = []
-            st.session_state.learning_history = []
-            st.session_state.milestone_history = []
-            st.session_state.complexity_history = []
-            st.session_state.teaching_history = []
-            st.session_state.development_metrics = {
-                'success_rate': [],
-                'abstraction': [],
-                'self_awareness': [],
-                'complexity_level': [],
-                'emotional_stability': []
-            }
-            st.session_state.initialized = True
+            # Check for latest backup
+            backup_path = os.path.join("checkpoints", "digital_child_state_latest.pth")
+            if os.path.exists(backup_path):
+                try:
+                    # Add datetime to safe globals
+                    torch.serialization.add_safe_globals(['datetime'])
+                    
+                    # Load the backup
+                    save_data = torch.load(
+                        backup_path,
+                        weights_only=False,
+                        map_location=torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+                    )
+                    
+                    # Initialize child and mother
+                    st.session_state.child = DigitalChild()
+                    st.session_state.mother = MotherLLM()
+                    
+                    # Load child state
+                    try:
+                        st.session_state.child.brain.load_state_dict(save_data['child_state_dict'])
+                    except Exception as model_e:
+                        st.warning(f"Could not load model state due to architecture mismatch: {str(model_e)}")
+                        st.info("Continuing with fresh model weights but preserving other state data.")
+                    
+                    # Restore emotional state
+                    if isinstance(save_data['emotional_state'], dict):
+                        emotional_values = [
+                            save_data['emotional_state']['happiness'],
+                            save_data['emotional_state']['sadness'],
+                            save_data['emotional_state']['anger'],
+                            save_data['emotional_state']['fear']
+                        ]
+                        st.session_state.child.emotional_state = torch.tensor(
+                            emotional_values,
+                            device=st.session_state.child.device
+                        )
+                    else:
+                        st.session_state.child.emotional_state = torch.tensor(
+                            save_data['emotional_state'],
+                            device=st.session_state.child.device
+                        )
+                    
+                    # Restore session state
+                    st.session_state.birth_time = datetime.fromisoformat(save_data['birth_date'])
+                    st.session_state.conversation_history = [
+                        {**item, 'timestamp': datetime.fromisoformat(item['timestamp']) 
+                         if isinstance(item['timestamp'], str) else item['timestamp']}
+                        for item in save_data['conversation_history']
+                    ]
+                    st.session_state.emotional_history = [
+                        torch.tensor(e, device=st.session_state.child.device) 
+                        if isinstance(e, list) else e 
+                        for e in save_data['emotional_history']
+                    ]
+                    st.session_state.learning_history = save_data['learning_history']
+                    st.session_state.milestone_history = save_data['milestone_history']
+                    st.session_state.complexity_history = save_data['complexity_history']
+                    st.session_state.teaching_history = [
+                        {**item, 'date': datetime.fromisoformat(item['date']) 
+                         if isinstance(item['date'], str) else item['date']}
+                        for item in save_data['teaching_history']
+                    ]
+                    st.session_state.development_metrics = save_data['development_metrics']
+                    
+                    # Restore current stage
+                    if 'current_stage' in save_data:
+                        st.session_state.child.curriculum.current_stage = DevelopmentalStage[save_data['current_stage']]
+                    
+                    st.session_state.initialized = True
+                    st.success("Previous state loaded automatically!")
+                    
+                except Exception as e:
+                    st.error(f"Error loading backup state: {str(e)}")
+                    if st.sidebar.checkbox("Debug Mode", key="debug_mode_init", value=False):
+                        st.exception(e)
+                    # Fall back to new initialization
+                    initialize_new_session()
+            else:
+                # No backup found, initialize new session
+                initialize_new_session()
+                
         except Exception as e:
             st.error(f"Error initializing digital child: {str(e)}")
-            if st.sidebar.checkbox("Debug Mode", value=False):
+            if st.sidebar.checkbox("Debug Mode", key="debug_mode_init", value=False):
                 st.exception(e)
 
 def ensure_tensor_device(tensor, target_device=None):
@@ -194,7 +280,16 @@ def calculate_complexity_level():
     """Calculate current complexity level based on various factors with time acceleration"""
     child = st.session_state.child
     stage_value = child.curriculum.current_stage.value
-    emotional_complexity = np.mean(child.emotional_state.cpu().numpy())
+    
+    # Convert EmotionalState to numpy array directly
+    emotional_state = np.array([
+        child.emotional_state.happiness,
+        child.emotional_state.sadness,
+        child.emotional_state.anger,
+        child.emotional_state.fear
+    ])
+    emotional_complexity = np.mean(emotional_state)
+    
     learning_progress = len(st.session_state.learning_history)
     
     # Calculate age-based acceleration
@@ -379,6 +474,63 @@ def track_milestone_progress(milestone, progress_value):
     
     st.session_state.milestone_progress[milestone] = progress_value
 
+def render_development_progress():
+    """Display detailed development progress metrics"""
+    if not hasattr(st.session_state.child, 'curriculum'):
+        return
+        
+    # Get current development status
+    status = st.session_state.child.curriculum.get_development_status()
+    
+    st.subheader("📊 Development Progress")
+    
+    # Display current stage and duration
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Current Stage", status['current_stage'])
+    with col2:
+        st.metric("Stage Duration", f"{status['stage_duration']} interactions")
+    
+    # Display skill progress
+    st.subheader("Skill Development")
+    skill_cols = st.columns(4)
+    for i, (skill, progress) in enumerate(status['skill_progress'].items()):
+        with skill_cols[i % 4]:
+            st.metric(
+                skill.replace('_', ' ').title(),
+                f"{progress*100:.1f}%"
+            )
+            st.progress(progress)
+    
+    # Display interaction counts
+    st.subheader("Interaction History")
+    interaction_cols = st.columns(len(status['interaction_counts']))
+    for col, (interaction, count) in zip(interaction_cols, status['interaction_counts'].items()):
+        with col:
+            st.metric(
+                interaction.replace('_', ' ').title(),
+                count,
+                help=f"Number of {interaction.replace('_', ' ')} interactions"
+            )
+    
+    # Show progression readiness
+    st.subheader("Stage Progression")
+    if status['ready_for_progression']:
+        st.success("✨ Ready to progress to next stage!")
+        st.info("""
+        **Requirements Met:**
+        - Basic skills mastered
+        - Sufficient interaction diversity
+        - Emotional readiness achieved
+        - Overall development score > 70%
+        """)
+    else:
+        st.info("Continue interactions to develop required skills")
+        
+    # Show detailed metrics
+    with st.expander("View Detailed Metrics", expanded=False):
+        st.json(status['metrics'])
+
 def render_upcoming_milestones():
     """Display upcoming milestones with progress bars"""
     try:
@@ -391,15 +543,35 @@ def render_upcoming_milestones():
         # Get stage requirements using the new API
         stage_reqs = st.session_state.child.curriculum.get_stage_requirements()
         
+        # Get current development status
+        dev_status = st.session_state.child.curriculum.get_development_status()
+        
         # Display current milestones with completion status
         st.write("Current Milestones:")
         current_milestones = stage_reqs.get('current_milestones', [])
         if current_milestones:
             for milestone in current_milestones:
-                progress = st.session_state.milestone_progress.get(milestone, 1.0)  # Current milestones are complete
+                # Calculate progress based on relevant skills
+                skill_mapping = {
+                    'Basic reflexes': ['motor_skills'],
+                    'Can cry to express needs': ['emotional_expression', 'sound_response'],
+                    'Recognize mother\'s voice': ['voice_recognition'],
+                    'Follow moving objects with eyes': ['visual_tracking'],
+                    'Respond to loud sounds': ['sound_response'],
+                    'Make cooing sounds': ['vocalization']
+                }
+                
+                if milestone in skill_mapping:
+                    progress = np.mean([
+                        dev_status['skill_progress'][skill]
+                        for skill in skill_mapping[milestone]
+                    ])
+                else:
+                    progress = st.session_state.milestone_progress.get(milestone, 0.0)
+                
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.write(f"✓ {milestone}")
+                    st.write(f"{'✓' if progress > 0.9 else '○'} {milestone}")
                 with col2:
                     st.progress(progress)
         else:
@@ -410,36 +582,53 @@ def render_upcoming_milestones():
         upcoming_milestones = stage_reqs.get('upcoming_milestones', [])
         if upcoming_milestones:
             for milestone in upcoming_milestones:
-                progress = st.session_state.milestone_progress.get(milestone, 0.0)
+                # Calculate progress based on relevant skills
+                skill_mapping = {
+                    'Social smiling': ['social_bonding', 'emotional_expression'],
+                    'Object manipulation': ['motor_skills', 'object_permanence'],
+                    'Babbling': ['vocalization', 'sound_response'],
+                    'Sitting without support': ['motor_skills'],
+                    'Track moving objects': ['visual_tracking'],
+                    'Respond to sounds': ['sound_response']
+                }
+                
+                if milestone in skill_mapping:
+                    progress = np.mean([
+                        dev_status['skill_progress'][skill]
+                        for skill in skill_mapping[milestone]
+                    ])
+                else:
+                    progress = st.session_state.milestone_progress.get(milestone, 0.0)
+                
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.write(f"○ {milestone}")
+                    st.write(f"{'○' if progress > 0.5 else '◇'} {milestone}")
                 with col2:
                     st.progress(progress)
         else:
             st.write("No upcoming milestones defined")
         
-        # Display next stage milestones
-        if stage.value < len(DevelopmentalStage) - 1:
-            try:
-                next_stage = DevelopmentalStage(stage.value + 1)
-                temp_system = DevelopmentalSystem()
-                temp_system.current_stage = next_stage
-                next_stage_reqs = temp_system.get_stage_requirements()
-                
-                next_milestones = next_stage_reqs.get('current_milestones', [])
-                if next_milestones:
-                    st.write(f"\nNext Stage ({next_stage.name}) Milestones:")
-                    for milestone in next_milestones:
-                        progress = st.session_state.milestone_progress.get(milestone, 0.0)
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            st.write(f"◇ {milestone}")
-                        with col2:
-                            st.progress(progress)
-            except Exception as e:
-                if st.sidebar.checkbox("Debug Mode", value=False):
-                    st.error(f"Error loading next stage: {str(e)}")
+        # Display progression hints
+        if not dev_status['ready_for_progression']:
+            st.info("💡 **Development Hints:**")
+            hints = []
+            
+            # Add specific hints based on skill progress
+            for skill, progress in dev_status['skill_progress'].items():
+                if progress < 0.6:
+                    hint_mapping = {
+                        'voice_recognition': "Try talking and singing more to help with voice recognition",
+                        'visual_tracking': "Show moving objects and encourage eye tracking",
+                        'sound_response': "Make different sounds and observe responses",
+                        'vocalization': "Encourage babbling and cooing through interaction",
+                        'social_bonding': "Increase face-to-face interaction and emotional exchanges",
+                        'motor_skills': "Provide opportunities for physical movement and reaching"
+                    }
+                    if skill in hint_mapping:
+                        hints.append(hint_mapping[skill])
+            
+            for hint in hints:
+                st.write(f"- {hint}")
     
     except Exception as e:
         st.error("Error displaying milestones")
@@ -616,8 +805,15 @@ def calculate_sentience_level():
         
     child = st.session_state.child
     
+    # Convert EmotionalState to numpy array directly
+    emotional_state = np.array([
+        child.emotional_state.happiness,
+        child.emotional_state.sadness,
+        child.emotional_state.anger,
+        child.emotional_state.fear
+    ])
+    
     # Calculate emotional complexity (0-1)
-    emotional_state = child.emotional_state.cpu().numpy()
     emotional_complexity = np.std(emotional_state)  # Higher variance = more complex emotions
     
     # Calculate self-awareness (0-1)
@@ -827,6 +1023,97 @@ def render_event_logs():
             fig.update_layout(height=400)
             st.plotly_chart(fig, use_container_width=True)
 
+def verify_checkpoints():
+    """Verify and display information about available checkpoints"""
+    save_dir = "checkpoints"
+    if not os.path.exists(save_dir):
+        return None, "No checkpoint directory found"
+    
+    checkpoints = []
+    total_size = 0
+    
+    try:
+        # List all checkpoint files
+        for file in os.listdir(save_dir):
+            if file.endswith('.pth'):
+                file_path = os.path.join(save_dir, file)
+                file_size = os.path.getsize(file_path) / (1024 * 1024)  # Convert to MB
+                file_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                
+                # Try to load and verify checkpoint content
+                try:
+                    checkpoint_data = torch.load(file_path, map_location='cpu')
+                    # Verify essential components
+                    has_state_dict = 'child_state_dict' in checkpoint_data
+                    has_emotional = 'emotional_state' in checkpoint_data
+                    has_history = 'conversation_history' in checkpoint_data
+                    
+                    status = "✅ Valid" if all([has_state_dict, has_emotional, has_history]) else "⚠️ Incomplete"
+                    
+                except Exception as e:
+                    status = f"❌ Error: {str(e)}"
+                
+                checkpoints.append({
+                    'filename': file,
+                    'size_mb': file_size,
+                    'timestamp': file_time,
+                    'status': status
+                })
+                total_size += file_size
+        
+        return checkpoints, f"Total size: {total_size:.2f}MB"
+    except Exception as e:
+        return None, f"Error verifying checkpoints: {str(e)}"
+
+def render_checkpoint_info():
+    """Display checkpoint verification information"""
+    st.subheader("💾 Checkpoint Information")
+    
+    checkpoints, summary = verify_checkpoints()
+    
+    if checkpoints:
+        # Display summary
+        st.info(f"Found {len(checkpoints)} checkpoints. {summary}")
+        
+        # Create a dataframe for better visualization
+        df = pd.DataFrame(checkpoints)
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df = df.sort_values('timestamp', ascending=False)
+        
+        # Display as a table
+        st.dataframe(
+            df,
+            column_config={
+                'filename': 'Checkpoint File',
+                'size_mb': st.column_config.NumberColumn(
+                    'Size (MB)',
+                    format="%.2f MB"
+                ),
+                'timestamp': st.column_config.DatetimeColumn(
+                    'Saved On',
+                    format="DD/MM/YYYY HH:mm:ss"
+                ),
+                'status': 'Status'
+            },
+            hide_index=True
+        )
+        
+        # Add checkpoint cleanup option with a unique key based on location
+        if st.button("Cleanup Invalid Checkpoints", key="cleanup_checkpoints_button"):
+            cleaned = 0
+            for checkpoint in checkpoints:
+                if "❌" in checkpoint['status']:
+                    try:
+                        os.remove(os.path.join("checkpoints", checkpoint['filename']))
+                        cleaned += 1
+                    except Exception as e:
+                        st.error(f"Error removing {checkpoint['filename']}: {str(e)}")
+            if cleaned > 0:
+                st.success(f"Removed {cleaned} invalid checkpoint(s)")
+                st.rerun()
+    else:
+        st.warning(summary)
+
 def main():
     # Add time controls to sidebar
     add_time_controls()
@@ -876,7 +1163,12 @@ def main():
             st.info(f"Child is feeling: {current_feeling}")
             
             # Emotional State Visualization
-            emotional_state = st.session_state.child.emotional_state.cpu().numpy()
+            emotional_state = np.array([
+                st.session_state.child.emotional_state.happiness,
+                st.session_state.child.emotional_state.sadness,
+                st.session_state.child.emotional_state.anger,
+                st.session_state.child.emotional_state.fear
+            ])
             emotions_fig = create_emotion_radar_chart(emotional_state)
             st.plotly_chart(emotions_fig, use_container_width=True)
             
@@ -924,7 +1216,10 @@ def main():
             
             # Interact with Child
             st.subheader("Interact with Child")
-            current_behaviors = st.session_state.child.curriculum.get_stage_requirements()['behaviors']
+            
+            # Get stage requirements with safe default
+            stage_reqs = st.session_state.child.curriculum.get_stage_requirements()
+            current_behaviors = stage_reqs.get('behaviors', [])
             
             # Create a list of all interactions with their stage information
             all_interactions = []
@@ -1217,6 +1512,9 @@ def main():
         st.subheader("Development Milestones")
         render_milestone_timeline()
         
+        # Add the new development progress section
+        render_development_progress()
+        
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Learning Achievements")
@@ -1257,7 +1555,7 @@ def main():
     save_load_cols = st.columns([1, 1, 2])
     
     with save_load_cols[0]:
-        if st.button("Save State", use_container_width=True):
+        if st.button("Save State", key="save_state_button", use_container_width=True):
             try:
                 # Create a timestamp for the filename
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1276,16 +1574,32 @@ def main():
                 # Save both child and session state
                 save_data = {
                     'child_state_dict': st.session_state.child.brain.state_dict(),
-                    'emotional_state': st.session_state.child.emotional_state.cpu().numpy().tolist(),
+                    'emotional_state': {
+                        'happiness': st.session_state.child.emotional_state.happiness,
+                        'sadness': st.session_state.child.emotional_state.sadness,
+                        'anger': st.session_state.child.emotional_state.anger,
+                        'fear': st.session_state.child.emotional_state.fear
+                    },
                     'birth_date': st.session_state.birth_time.isoformat(),
                     'conversation_history': conversation_history,
-                    'emotional_history': [e.tolist() if isinstance(e, torch.Tensor) else e for e in st.session_state.emotional_history],
+                    'emotional_history': [
+                        e.tolist() if isinstance(e, torch.Tensor) else [
+                            e.happiness, e.sadness, e.anger, e.fear
+                        ] if hasattr(e, 'happiness') else e 
+                        for e in st.session_state.emotional_history
+                    ],
                     'learning_history': st.session_state.learning_history,
                     'milestone_history': st.session_state.milestone_history,
                     'complexity_history': st.session_state.complexity_history,
                     'teaching_history': teaching_history,
                     'development_metrics': st.session_state.development_metrics,
-                    'current_stage': st.session_state.child.curriculum.current_stage.name
+                    'current_stage': st.session_state.child.curriculum.current_stage.name,
+                    'save_info': {
+                        'app_version': '1.0',
+                        'save_time': datetime.now().isoformat(),
+                        'developmental_stage': st.session_state.child.curriculum.current_stage.name,
+                        'total_interactions': len(st.session_state.conversation_history)
+                    }
                 }
                 
                 # Create save directory if it doesn't exist
@@ -1302,13 +1616,16 @@ def main():
                 torch.save(save_data, backup_path)
                 st.info("Backup saved as 'digital_child_state_latest.pth'")
                 
+                # Show checkpoint verification
+                render_checkpoint_info()
+                
             except Exception as e:
                 st.error(f"Error saving state: {str(e)}")
                 if st.sidebar.checkbox("Debug Mode", value=False):
                     st.exception(e)
     
     with save_load_cols[1]:
-        uploaded_file = st.file_uploader("Load State", type="pth")
+        uploaded_file = st.file_uploader("Load State", type="pth", key="state_file_uploader")
         if uploaded_file is not None:
             try:
                 # Add datetime to safe globals
@@ -1321,14 +1638,40 @@ def main():
                     map_location=st.session_state.child.device
                 )
                 
+                # Display save information if available
+                if 'save_info' in save_data:
+                    info = save_data['save_info']
+                    st.info(f"""
+                    **Checkpoint Information:**
+                    - Saved on: {datetime.fromisoformat(info['save_time']).strftime('%Y-%m-%d %H:%M:%S')}
+                    - Stage: {info['developmental_stage']}
+                    - Total Interactions: {info['total_interactions']}
+                    """)
+                
                 # Load child state
-                st.session_state.child.brain.load_state_dict(save_data['child_state_dict'])
+                try:
+                    st.session_state.child.brain.load_state_dict(save_data['child_state_dict'])
+                except Exception as model_e:
+                    st.warning(f"Could not load model state due to architecture mismatch: {str(model_e)}")
+                    st.info("Continuing with fresh model weights but preserving other state data.")
                 
                 # Restore emotional state
-                st.session_state.child.emotional_state = torch.tensor(
-                    save_data['emotional_state'],
-                    device=st.session_state.child.device
-                )
+                if isinstance(save_data['emotional_state'], dict):
+                    emotional_values = [
+                        save_data['emotional_state']['happiness'],
+                        save_data['emotional_state']['sadness'],
+                        save_data['emotional_state']['anger'],
+                        save_data['emotional_state']['fear']
+                    ]
+                    st.session_state.child.emotional_state = torch.tensor(
+                        emotional_values,
+                        device=st.session_state.child.device
+                    )
+                else:
+                    st.session_state.child.emotional_state = torch.tensor(
+                        save_data['emotional_state'],
+                        device=st.session_state.child.device
+                    )
                 
                 # Restore birth time
                 st.session_state.birth_time = datetime.fromisoformat(save_data['birth_date'])
@@ -1368,17 +1711,19 @@ def main():
                 st.info("Please refresh the page to see all restored state.")
             except Exception as e:
                 st.error(f"Error loading state: {str(e)}")
-                if st.sidebar.checkbox("Debug Mode", value=False):
+                if st.sidebar.checkbox("Debug Mode", key="debug_mode_load", value=False):
                     st.exception(e)
                 st.info("If you trust this file, try restarting the application and loading again.")
     
     with save_load_cols[2]:
+        # Add checkpoint verification to the info panel
+        render_checkpoint_info()
         st.info("Save/Load functionality preserves all history and development progress.")
 
     # Add a new section for logs in the sidebar
     with st.sidebar:
         st.subheader("🔍 LM Studio Logs")
-        if st.checkbox("Show Server Logs", value=False):
+        if st.checkbox("Show Server Logs", key="show_server_logs", value=False):
             log_placeholder = st.empty()
             
             # Create a container for scrollable logs
@@ -1388,7 +1733,7 @@ def main():
                     st.session_state.log_history = []
                 
                 # Add a clear logs button
-                if st.button("Clear Logs"):
+                if st.button("Clear Logs", key="clear_logs_button"):
                     st.session_state.log_history = []
                 
                 # Stream logs

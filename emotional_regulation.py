@@ -3,8 +3,19 @@
 import torch
 import torch.nn as nn
 from collections import deque
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 import numpy as np
+from dataclasses import dataclass
+
+@dataclass
+class EmotionalMemory:
+    """Represents a memory with associated emotional context."""
+    content: str
+    emotions: Dict[str, float]
+    timestamp: float
+    intensity: float
+    valence: float  # -1 to 1, negative to positive
+    arousal: float  # 0 to 1, low to high activation
 
 class EmotionalState:
     def __init__(self, device='cuda'):
@@ -76,138 +87,203 @@ class EmotionalState:
             self.primary_emotions[emotion].data = tensor[i]
 
 class EmotionalRegulation(nn.Module):
+    """Advanced emotional regulation system with memory and context awareness."""
+    
     def __init__(self, 
-                 emotion_dim: int = 4,
-                 hidden_dim: int = 32,
+                 emotion_dim: int = 8,  # Increased for more emotional dimensions
+                 hidden_dim: int = 64,  # Increased for more complex processing
+                 memory_size: int = 100,
                  device: Optional[torch.device] = None):
         super().__init__()
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.emotion_dim = emotion_dim
         self.hidden_dim = hidden_dim
         
-        # Emotion processing network
+        # Emotional memory system
+        self.memory_buffer = deque(maxlen=memory_size)
+        self.emotional_memory = nn.Parameter(torch.zeros(emotion_dim))
+        self.memory_attention = nn.MultiheadAttention(hidden_dim, num_heads=4)
+        
+        # Enhanced emotion processing network
         self.emotion_processor = nn.Sequential(
             nn.Linear(emotion_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, emotion_dim),
             nn.Sigmoid()
         )
         
-        # Context integration network
-        self.context_network = nn.Sequential(
+        # Context-aware processing
+        self.context_encoder = nn.Sequential(
             nn.Linear(hidden_dim + emotion_dim, hidden_dim),
+            nn.LayerNorm(hidden_dim),
             nn.ReLU(),
             nn.Linear(hidden_dim, emotion_dim),
             nn.Sigmoid()
         )
         
-        # Regulation network
-        self.regulation_network = nn.Sequential(
-            nn.Linear(emotion_dim * 2, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, emotion_dim),
-            nn.Sigmoid()
-        )
+        # Advanced regulation network with residual connections
+        self.regulation_network = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(emotion_dim * 2, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(0.1)
+            ),
+            nn.Sequential(
+                nn.Linear(hidden_dim, hidden_dim),
+                nn.LayerNorm(hidden_dim),
+                nn.ReLU(),
+                nn.Dropout(0.1)
+            ),
+            nn.Sequential(
+                nn.Linear(hidden_dim, emotion_dim),
+                nn.Sigmoid()
+            )
+        ])
         
-        # Adaptive parameters
+        # Adaptive parameters with learned weights
         self.regulation_strength = nn.Parameter(torch.tensor(0.5))
-        self.emotional_memory = nn.Parameter(torch.zeros(emotion_dim))
+        self.emotional_stability = nn.Parameter(torch.tensor(0.7))
         self.baseline_emotions = nn.Parameter(torch.ones(emotion_dim) * 0.5)
+        
+        # Emotion mixing weights
+        self.emotion_mixing_weights = nn.Parameter(torch.ones(emotion_dim, emotion_dim) / emotion_dim)
         
         # Move to device
         self.to(self.device)
-        
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Process and regulate emotional state"""
-        # Ensure input is on correct device
+    
+    def forward(self, x: torch.Tensor, context: Optional[Dict[str, Any]] = None) -> torch.Tensor:
+        """Process and regulate emotional state with context awareness."""
         x = x.to(self.device)
         
-        # Extract emotional features
+        # Process basic emotions
         emotional_state = self.emotion_processor(x)
         
-        # Integrate context
-        context_features = torch.mean(x.view(-1, self.hidden_dim), dim=0)
-        context = self.context_network(
-            torch.cat([context_features, emotional_state.squeeze(0)], dim=0)
-        )
+        # Apply context if available
+        if context:
+            context_tensor = self._encode_context(context)
+            emotional_state = self._apply_context(emotional_state, context_tensor)
         
         # Update emotional memory
-        self.emotional_memory.data = (
-            0.9 * self.emotional_memory.data +
-            0.1 * emotional_state.squeeze(0)
-        )
+        self._update_memory(emotional_state, context)
         
-        # Regulate emotions
-        target_state = self._compute_target_state(emotional_state, context)
-        regulated_state = self.regulation_network(
-            torch.cat([emotional_state, target_state], dim=-1)
-        )
+        # Get memory-influenced target state
+        target_state = self._compute_target_state(emotional_state)
         
-        # Apply regulation strength
+        # Apply regulation through residual network
+        regulated_state = emotional_state
+        for layer in self.regulation_network:
+            residual = regulated_state
+            regulated_state = layer(torch.cat([regulated_state, target_state], dim=-1))
+            if regulated_state.shape == residual.shape:
+                regulated_state = regulated_state + residual
+        
+        # Apply adaptive regulation strength
         final_state = (
             self.regulation_strength * regulated_state +
             (1 - self.regulation_strength) * emotional_state
         )
         
+        # Apply emotion mixing for complex emotional states
+        mixed_emotions = torch.matmul(final_state, self.emotion_mixing_weights)
+        final_state = torch.sigmoid(mixed_emotions)
+        
         return final_state
     
-    def _compute_target_state(self, 
-                            current_state: torch.Tensor,
-                            context: torch.Tensor) -> torch.Tensor:
-        """Compute target emotional state based on context and baseline"""
-        # Weighted combination of baseline and context
-        target = (
-            0.7 * self.baseline_emotions +
-            0.3 * context
+    def _encode_context(self, context: Dict[str, Any]) -> torch.Tensor:
+        """Encode contextual information into a tensor."""
+        # Convert context features to tensor
+        context_features = []
+        if 'valence' in context:
+            context_features.append(float(context['valence']))
+        if 'arousal' in context:
+            context_features.append(float(context['arousal']))
+        if 'intensity' in context:
+            context_features.append(float(context['intensity']))
+            
+        # Pad or truncate to match hidden_dim
+        while len(context_features) < self.hidden_dim:
+            context_features.append(0.0)
+        context_features = context_features[:self.hidden_dim]
+        
+        return torch.tensor(context_features, device=self.device)
+    
+    def _apply_context(self, emotional_state: torch.Tensor, context: torch.Tensor) -> torch.Tensor:
+        """Apply contextual modulation to emotional state."""
+        context_influence = self.context_encoder(
+            torch.cat([context, emotional_state], dim=-1)
+        )
+        return (emotional_state + context_influence) / 2
+    
+    def _update_memory(self, emotional_state: torch.Tensor, context: Optional[Dict[str, Any]] = None):
+        """Update emotional memory with current state and context."""
+        # Create memory entry
+        memory = EmotionalMemory(
+            content=context.get('content', '') if context else '',
+            emotions={
+                'primary': emotional_state.detach().cpu().numpy(),
+                'context': context or {}
+            },
+            timestamp=float(torch.rand(1)),  # Simplified timestamp
+            intensity=float(emotional_state.mean()),
+            valence=float(emotional_state[0] - emotional_state[1]),  # happiness - sadness
+            arousal=float(emotional_state.std())
         )
         
-        # Ensure target state is achievable
-        max_change = 0.2  # Maximum allowed change per step
+        self.memory_buffer.append(memory)
+        
+        # Update emotional memory with exponential decay
+        decay = 0.95
+        self.emotional_memory.data = (
+            decay * self.emotional_memory.data +
+            (1 - decay) * emotional_state.detach()
+        )
+    
+    def _compute_target_state(self, current_state: torch.Tensor) -> torch.Tensor:
+        """Compute target emotional state using memory and baseline."""
+        # Get recent memory influence
+        memory_influence = torch.zeros_like(current_state)
+        if self.memory_buffer:
+            recent_states = torch.stack([
+                torch.tensor(m.emotions['primary'], device=self.device)
+                for m in list(self.memory_buffer)[-5:]
+            ])
+            memory_influence = recent_states.mean(dim=0)
+        
+        # Combine baseline, memory, and stability
+        target = (
+            0.4 * self.baseline_emotions +
+            0.3 * memory_influence +
+            0.3 * self.emotional_memory
+        )
+        
+        # Apply emotional stability as a smoothing factor
+        max_change = 1.0 - self.emotional_stability
         delta = target - current_state
         clamped_delta = torch.clamp(delta, -max_change, max_change)
         target_state = current_state + clamped_delta
         
         return target_state
     
-    def update_baseline(self, emotion_sequence: torch.Tensor):
-        """Update baseline emotions based on observed sequence"""
-        with torch.no_grad():
-            # Calculate moving average
-            sequence_mean = torch.mean(emotion_sequence, dim=0)
-            
-            # Update baseline with momentum
-            self.baseline_emotions.data = (
-                0.95 * self.baseline_emotions.data +
-                0.05 * sequence_mean
-            )
-    
-    def adjust_regulation_strength(self, 
-                                 performance: float,
-                                 target_performance: float):
-        """Adjust regulation strength based on performance"""
-        with torch.no_grad():
-            # Calculate performance gap
-            performance_gap = target_performance - performance
-            
-            # Adjust regulation strength
-            if performance_gap > 0.2:  # Underperforming
-                self.regulation_strength.data *= 1.1  # Increase regulation
-            elif performance_gap < -0.2:  # Overperforming
-                self.regulation_strength.data *= 0.9  # Decrease regulation
-            
-            # Clamp to reasonable range
-            self.regulation_strength.data = torch.clamp(
-                self.regulation_strength.data,
-                0.1,  # Minimum regulation
-                0.9   # Maximum regulation
-            )
-    
-    def get_emotional_state(self) -> Dict[str, float]:
-        """Get current emotional state metrics"""
+    def get_emotional_state(self) -> Dict[str, Any]:
+        """Get detailed emotional state metrics."""
         return {
             'current_memory': self.emotional_memory.tolist(),
             'baseline': self.baseline_emotions.tolist(),
-            'regulation_strength': self.regulation_strength.item()
+            'regulation_strength': float(self.regulation_strength),
+            'emotional_stability': float(self.emotional_stability),
+            'memory_size': len(self.memory_buffer),
+            'recent_memories': [
+                {
+                    'timestamp': m.timestamp,
+                    'intensity': m.intensity,
+                    'valence': m.valence,
+                    'arousal': m.arousal
+                }
+                for m in list(self.memory_buffer)[-5:]
+            ]
         }

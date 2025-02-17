@@ -1,0 +1,57 @@
+# Rules
+Always refer to the user as Dr. Celaya before speaking.
+Always update the changelog when pushing to git. 
+Check the source code for errors before pushing to git.
+
+# Code Quality
+All new code must include docstrings, elaborate comments, and type hints.
+Maximum line length is 100 characters.
+Use descriptive variable names - no single-letter variables except in loops.
+All functions must have return type annotations.
+All classes must have proper inheritance documentation.
+No commented-out code allowed in commits.
+All TODO comments must include a JIRA ticket number.
+
+# Git Management
+Commit messages must follow conventional commits format.
+No direct commits to main branch.
+All feature branches must be prefixed with 'feature/'.
+All bugfix branches must be prefixed with 'bugfix/'.
+Squash commits before merging to main.
+Delete branches after merging.
+
+# Testing
+All new features must include unit tests.
+Minimum test coverage of 80% required.
+All tests must pass before pushing.
+Integration tests required for API changes.
+
+# Documentation
+README must be updated with any new features.
+API documentation must be updated with changes.
+All public functions must have examples in docstrings.
+Update architecture diagrams when changing core components.
+
+# Error Handling
+All exceptions must be properly caught and logged.
+No silent failures allowed.
+Custom exceptions must inherit from base exception classes.
+Error messages must be descriptive and actionable.
+
+# Performance
+Profile code changes that affect core functionality.
+Memory leaks must be checked before merging.
+Optimize loops and database queries.
+Cache expensive computations.
+
+# Security
+No hardcoded credentials in code.
+All user inputs must be sanitized.
+Use environment variables for sensitive data.
+Regular security dependency updates required.
+
+# Versioning
+Follow semantic versioning strictly.
+Update version numbers in all relevant files.
+Tag all releases in git.
+Keep version history in changelog.
