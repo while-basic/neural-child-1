@@ -1314,6 +1314,47 @@ class DigitalChild:
         if hasattr(self, 'notifications'):
             self.notifications = []
 
+    def set_development_speed(self, speed_multiplier: float) -> None:
+        """Set the development speed multiplier with safety checks.
+        
+        Args:
+            speed_multiplier: The desired speed multiplier (1.0 = normal speed)
+        """
+        try:
+            # Get current warning indicators
+            warning_indicators = self.get_warning_indicators()
+            
+            # Get acceleration metrics
+            acceleration_metrics = self.get_acceleration_metrics()
+            
+            # Ensure speed is within safe limits
+            max_safe = acceleration_metrics['max_safe_multiplier']
+            
+            # Apply speed with safety limits
+            self.speed_multiplier = max(0.1, min(speed_multiplier, max_safe))
+            
+            # Log speed change
+            logger.info(
+                f"Development speed set to {self.speed_multiplier:.1f}x "
+                f"(requested: {speed_multiplier:.1f}x, max safe: {max_safe:.1f}x)"
+            )
+            
+            # Create notification if speed was limited
+            if speed_multiplier > max_safe:
+                if not hasattr(self, 'notifications'):
+                    self.notifications = []
+                self.notifications.append({
+                    'type': 'warning',
+                    'title': 'Speed Limited',
+                    'message': f'Speed limited to {max_safe:.1f}x for safety (requested: {speed_multiplier:.1f}x)',
+                    'timestamp': datetime.now()
+                })
+                
+        except Exception as e:
+            logger.error(f"Error setting development speed: {str(e)}")
+            # Fallback to safe speed
+            self.speed_multiplier = 1.0
+
 if __name__ == "__main__":
     try:
         # Initialize logging
