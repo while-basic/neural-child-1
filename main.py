@@ -6,13 +6,14 @@ between a mother and a developing child.
 """
 
 import torch
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any, Union
 from datetime import datetime
 import psutil
 from dataclasses import dataclass
 import logging
 import os
 import time
+import numpy as np
 
 from llm_module import chat_completion
 from child_model import DynamicNeuralChild
@@ -84,21 +85,102 @@ class EmotionalState:
 
     def to_vector(self) -> List[float]:
         """Convert the emotional state to a vector representation."""
-        return [self.happiness, self.sadness, self.anger, self.fear, self.surprise, self.disgust, self.trust, self.anticipation]
+        return [self.happiness, self.sadness, self.anger, self.fear, 
+                self.surprise, self.disgust, self.trust, self.anticipation]
 
     @classmethod
     def from_vector(cls, vector: List[float]) -> 'EmotionalState':
-        """Create an EmotionalState instance from a vector representation."""
+        """Create an EmotionalState instance from a vector representation.
+        
+        Args:
+            vector: List of emotion values. If less than 8 values are provided,
+                   default values will be used for missing emotions.
+        
+        Returns:
+            EmotionalState instance with the provided or default values.
+        """
+        # Ensure vector has at least 8 elements with default values
+        padded_vector = list(vector)  # Convert to list if it's a tensor or array
+        while len(padded_vector) < 8:
+            padded_vector.append(0.5)  # Add default value for missing emotions
+            
+        # Ensure all values are floats and clipped to [0, 1]
+        padded_vector = [max(0.0, min(1.0, float(v))) for v in padded_vector[:8]]
+        
         return cls(
-            happiness=vector[0],
-            sadness=vector[1],
-            anger=vector[2],
-            fear=vector[3],
-            surprise=vector[4],
-            disgust=vector[5],
-            trust=vector[6],
-            anticipation=vector[7]
+            happiness=padded_vector[0],
+            sadness=padded_vector[1],
+            anger=padded_vector[2],
+            fear=padded_vector[3],
+            surprise=padded_vector[4],
+            disgust=padded_vector[5],
+            trust=padded_vector[6],
+            anticipation=padded_vector[7]
         )
+
+def ensure_tensor_on_device(tensor: torch.Tensor, target_device: Optional[torch.device] = None) -> torch.Tensor:
+    """Ensure a tensor is on the specified device.
+    
+    Args:
+        tensor: Input tensor
+        target_device: Target device (defaults to global device)
+        
+    Returns:
+        Tensor on the correct device
+    """
+    if target_device is None:
+        target_device = device  # Use global device
+    
+    if tensor.device != target_device:
+        tensor = tensor.to(target_device)
+    return tensor
+
+def ensure_emotional_state(state: Union[EmotionalState, torch.Tensor, Dict[str, float], List[float], None]) -> EmotionalState:
+    """Convert various input types to EmotionalState.
+    
+    Args:
+        state: Input state as EmotionalState, tensor, dict, list, or None
+        
+    Returns:
+        EmotionalState object
+    """
+    if state is None:
+        return EmotionalState(0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.5, 0.5)
+        
+    if isinstance(state, EmotionalState):
+        return state
+        
+    if isinstance(state, torch.Tensor):
+        # Move tensor to CPU for conversion
+        state = state.detach().cpu()
+        # Handle both 1D and 2D tensors
+        if state.dim() > 1:
+            state = state.squeeze()
+        # Convert to list
+        vector = state.tolist()
+        # Convert single values to list if needed
+        if not isinstance(vector, list):
+            vector = [vector]
+        return EmotionalState.from_vector(vector)
+        
+    if isinstance(state, dict):
+        return EmotionalState(
+            happiness=float(state.get('happiness', 0.5)),
+            sadness=float(state.get('sadness', 0.5)),
+            anger=float(state.get('anger', 0.5)),
+            fear=float(state.get('fear', 0.5)),
+            surprise=float(state.get('surprise', 0.5)),
+            disgust=float(state.get('disgust', 0.0)),
+            trust=float(state.get('trust', 0.5)),
+            anticipation=float(state.get('anticipation', 0.5))
+        )
+        
+    if isinstance(state, (list, tuple, np.ndarray)):
+        return EmotionalState.from_vector(list(state))
+    
+    # Return default emotional state if input type is unknown
+    logger.warning(f"Unknown emotional state type: {type(state)}. Using default values.")
+    return EmotionalState(0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.5, 0.5)
 
 class MotherLLM:
     """Simulates a mother's responses using advanced LLM technology.
@@ -138,39 +220,69 @@ class MotherLLM:
         Returns:
             Tuple of (response text, emotional state)
         """
-        # Verify interaction is available for current stage
-        available_interactions = child.get_available_interactions()
-        if (category not in available_interactions or 
-            interaction not in available_interactions[category]):
+        try:
+            # Verify interaction is available for current stage
+            available_interactions = child.get_available_interactions()
+            if (category not in available_interactions or 
+                interaction not in available_interactions[category]):
+                return (
+                    f"That interaction is not appropriate for the current developmental stage ({child.current_stage.name})",
+                    child.emotional_state
+                )
+            
+            # Get interaction description
+            description = child.get_interaction_description(category, interaction)
+            
+            # Build context for the model
+            context = {
+                'stage': child.current_stage,
+                'age_months': child.age_months,
+                'emotional_state': child.emotional_state,
+                'interaction': interaction,
+                'category': category,
+                'description': description
+            }
+            
+            # Generate appropriate response
+            response_data = self._get_model_response(
+                child.current_stage,
+                f"Performing {interaction} ({category}): {description}",
+                emotional_context=context
+            )
+            
+            # Log successful interaction
+            child.log_interaction(category.lower(), {
+                'interaction': interaction,
+                'description': description,
+                'response': response_data['text'],
+                'effectiveness': response_data['effectiveness'],
+                'success': True
+            })
+            
+            # Update interaction timestamp
+            self.last_interaction_time = datetime.now()
+            
+            # Log success
+            logger.info(
+                f"Successfully performed {interaction} ({category}) - "
+                f"Effectiveness: {response_data['effectiveness']:.2%}"
+            )
+            
+            return response_data['text'], response_data['emotional_state']
+            
+        except Exception as e:
+            logger.error(f"Error performing interaction: {str(e)}")
+            # Log failed interaction
+            child.log_interaction(category.lower(), {
+                'interaction': interaction,
+                'description': description if 'description' in locals() else None,
+                'error': str(e),
+                'success': False
+            })
             return (
-                f"That interaction is not appropriate for the current developmental stage ({child.current_stage.name})",
+                "I'm having trouble with that interaction right now. Let's try something else.",
                 child.emotional_state
             )
-        
-        # Get interaction description
-        description = child.get_interaction_description(category, interaction)
-        
-        # Build context for the model
-        context = {
-            'stage': child.current_stage,
-            'age_months': child.age_months,
-            'emotional_state': child.emotional_state,
-            'interaction': interaction,
-            'category': category,
-            'description': description
-        }
-        
-        # Generate appropriate response
-        response_data = self._get_model_response(
-            child.current_stage,
-            f"Performing {interaction} ({category}): {description}",
-            emotional_context=context
-        )
-        
-        # Update interaction timestamp
-        self.last_interaction_time = datetime.now()
-        
-        return response_data['text'], response_data['emotional_state']
     
     def _get_model_response(
         self, 
@@ -244,29 +356,42 @@ class MotherLLM:
                 
                 # Extract and process emotional context
                 emotional_context = response.get('emotional_context', {})
-                emotional_state = EmotionalState(
-                    happiness=float(emotional_context.get('happiness', 0.5)),
-                    sadness=float(emotional_context.get('sadness', 0.5)),
-                    anger=float(emotional_context.get('anger', 0.5)),
-                    fear=float(emotional_context.get('fear', 0.5)),
-                    surprise=float(emotional_context.get('surprise', 0.5)),
-                    disgust=float(emotional_context.get('disgust', 0.0)),
-                    trust=float(emotional_context.get('trust', 0.5)),
-                    anticipation=float(emotional_context.get('anticipation', 0.5))
-                )
+                
+                # Convert tensor to EmotionalState if needed
+                if isinstance(emotional_context, torch.Tensor):
+                    emotional_state = EmotionalState(
+                        happiness=float(emotional_context[0]),
+                        sadness=float(emotional_context[1]),
+                        anger=float(emotional_context[2]),
+                        fear=float(emotional_context[3]),
+                        surprise=float(emotional_context[4]) if len(emotional_context) > 4 else 0.0,
+                        disgust=float(emotional_context[5]) if len(emotional_context) > 5 else 0.0,
+                        trust=float(emotional_context[6]) if len(emotional_context) > 6 else 0.5,
+                        anticipation=float(emotional_context[7]) if len(emotional_context) > 7 else 0.5
+                    )
+                else:
+                    emotional_state = EmotionalState(
+                        happiness=float(emotional_context.get('happiness', 0.5)),
+                        sadness=float(emotional_context.get('sadness', 0.5)),
+                        anger=float(emotional_context.get('anger', 0.5)),
+                        fear=float(emotional_context.get('fear', 0.5)),
+                        surprise=float(emotional_context.get('surprise', 0.5)),
+                        disgust=float(emotional_context.get('disgust', 0.0)),
+                        trust=float(emotional_context.get('trust', 0.5)),
+                        anticipation=float(emotional_context.get('anticipation', 0.5))
+                    )
                 
                 # Apply emotional regulation
-                regulated_state = self.emotional_regulation(
-                    torch.tensor(emotional_state.to_vector()),
-                    context={'stage': stage.value, 'content': user_input}
-                )
-                
-                # Convert regulated state back to EmotionalState
-                regulated_emotional_state = EmotionalState.from_vector(regulated_state.tolist())
+                if hasattr(self, 'emotional_regulation'):
+                    regulated_state = self.emotional_regulation(
+                        torch.tensor(emotional_state.to_vector()),
+                        context={'stage': stage.value, 'content': user_input}
+                    )
+                    emotional_state = EmotionalState.from_vector(regulated_state.tolist())
                 
                 return {
                     'text': response.get('response_text', 'I need a moment to think.'),
-                    'emotional_state': regulated_emotional_state,
+                    'emotional_state': emotional_state,
                     'action': response.get('action', None),
                     'effectiveness': float(response.get('effectiveness', 0.5))
                 }
@@ -317,6 +442,7 @@ class MotherLLM:
         emotional_context = None
         if self.emotional_history:
             last_state = self.emotional_history[-1]
+            last_state = ensure_emotional_state(last_state)
             emotional_context = {
                 'happiness': last_state.happiness,
                 'sadness': last_state.sadness,
@@ -335,6 +461,9 @@ class MotherLLM:
             emotional_context
         )
         
+        # Ensure emotional_state is EmotionalState object
+        response_data['emotional_state'] = ensure_emotional_state(response_data['emotional_state'])
+        
         # Update history
         self.emotional_history.append(response_data['emotional_state'])
         self.conversation_history.append({
@@ -348,13 +477,46 @@ class MotherLLM:
         
         return response_data['text'], response_data['emotional_state']
 
+def process_chat_completion(response_data):
+    """Process chat completion response safely.
+    
+    Args:
+        response_data: The response data from the chat completion
+        
+    Returns:
+        The processed response text
+    """
+    try:
+        if not response_data or 'choices' not in response_data:
+            return "I apologize, but I'm having trouble understanding. Could you rephrase that?"
+            
+        choices = response_data.get('choices', [])
+        if not choices:
+            return "I'm not sure how to respond to that. Could you try asking in a different way?"
+            
+        first_choice = choices[0]
+        if not first_choice or 'message' not in first_choice:
+            return "I'm having difficulty processing your request. Could you clarify what you mean?"
+            
+        message = first_choice.get('message', {})
+        content = message.get('content', '')
+        
+        if not content:
+            return "I understand your message, but I'm not sure how to respond. Could you provide more details?"
+            
+        return content
+        
+    except Exception as e:
+        logger.error(f"Error in chat completion processing: {str(e)}")
+        return "I encountered an error while processing your message. Could you try again?"
+
 class DigitalChild:
     """Simulates a developing digital child with learning capabilities."""
     
     def __init__(self) -> None:
         """Initialize the digital child with its core components."""
         # Set device configuration
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = device  # Use global device
         
         # Initialize neural components
         self.neural_model = DynamicNeuralChild().to(self.device)
@@ -375,6 +537,16 @@ class DigitalChild:
         self.current_stage = DevelopmentalStage.NEWBORN
         self.emotional_state = EmotionalState(0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.5, 0.5)
         self.age_months = 0
+        
+        # Initialize interaction tracking
+        self.total_interactions = 0
+        self.interaction_history = []
+        self.interaction_types = {
+            'learning': 0,
+            'emotional': 0,
+            'social': 0,
+            'physical': 0
+        }
         
         # Initialize warning system
         self.warning_state = "GREEN"
@@ -550,6 +722,11 @@ class DigitalChild:
             self.speed_multiplier = float(state_dict.get('speed_multiplier', 1.0))
             self.speed_locked = bool(state_dict.get('speed_locked', False))
             
+            # Load interaction tracking state
+            self.total_interactions = state_dict.get('total_interactions', 0)
+            self.interaction_types = state_dict.get('interaction_types', {'learning': 0, 'emotional': 0, 'social': 0, 'physical': 0})
+            self.interaction_history = state_dict.get('interaction_history', [])
+            
             logger.info("Successfully loaded model state")
             
         except FileNotFoundError:
@@ -574,6 +751,11 @@ class DigitalChild:
         self.recent_warnings = []
         self.speed_multiplier = 1.0
         self.speed_locked = False
+        
+        # Initialize interaction tracking
+        self.total_interactions = 0
+        self.interaction_history = []
+        self.interaction_types = {'learning': 0, 'emotional': 0, 'social': 0, 'physical': 0}
     
     def save_state(self) -> None:
         """Save the current model state with error handling."""
@@ -631,6 +813,11 @@ class DigitalChild:
             state_dict['speed_multiplier'] = self.speed_multiplier
             state_dict['speed_locked'] = self.speed_locked
             
+            # Save interaction tracking state
+            state_dict['total_interactions'] = self.total_interactions
+            state_dict['interaction_types'] = self.interaction_types
+            state_dict['interaction_history'] = self.interaction_history
+            
             # Save state with error handling
             try:
                 torch.save(state_dict, 'checkpoints/child_state.pt')
@@ -660,58 +847,99 @@ class DigitalChild:
             except Exception as minimal_error:
                 logger.error(f"Failed to save even minimal state: {minimal_error}")
 
-    def update_emotions(self, mother_response: EmotionalState) -> None:
-        """Update emotional state based on mother's response.
+    def log_interaction(self, interaction_type: str, details: Dict[str, Any]) -> None:
+        """Log an interaction with timestamp and details.
         
         Args:
-            mother_response: Emotional state from mother's response
+            interaction_type: Type of interaction (learning, emotional, social, physical)
+            details: Dictionary containing interaction details
         """
-        # Convert mother's response to tensor with all 8 dimensions
-        mother_emotions = torch.tensor(mother_response.to_vector(), device=self.device)
-        
-        # Use emotional regulation to modulate response
-        regulated_response = self.emotional_regulation(
-            mother_emotions,
-            context={'stage': self.current_stage.value}
-        )
-        
-        # Convert tensor back to EmotionalState
-        if isinstance(regulated_response, torch.Tensor):
-            regulated_response = EmotionalState.from_vector(regulated_response.squeeze().cpu().tolist())
-        
-        self.emotional_state = regulated_response
+        try:
+            # Increment total interactions
+            self.total_interactions += 1
+            
+            # Increment specific interaction type counter
+            if interaction_type.lower() in self.interaction_types:
+                self.interaction_types[interaction_type.lower()] += 1
+            
+            # Create interaction record
+            interaction_record = {
+                'timestamp': datetime.now(),
+                'type': interaction_type,
+                'details': details,
+                'stage': self.current_stage.name,
+                'age_months': self.age_months,
+                'emotional_state': ensure_emotional_state(self.emotional_state),
+                'interaction_number': self.total_interactions,
+                'success': details.get('success', True)  # Track success status
+            }
+            
+            # Add to history
+            self.interaction_history.append(interaction_record)
+            
+            # Log interaction with success status
+            success_status = "✅" if details.get('success', True) else "❌"
+            effectiveness = details.get('effectiveness', 0.0)
+            logger.info(
+                f"Interaction {self.total_interactions} {success_status} - "
+                f"Type: {interaction_type}, Stage: {self.current_stage.name}, "
+                f"Age: {self.age_months}mo"
+                + (f", Effectiveness: {effectiveness:.2%}" if effectiveness else "")
+            )
+            
+            # Create notification for successful interactions
+            if details.get('success', True):
+                interaction_name = details.get('interaction', interaction_type)
+                notification = {
+                    'type': 'success',
+                    'title': f'Interaction Successful: {interaction_name}',
+                    'message': (
+                        f"Successfully performed {interaction_name} interaction. "
+                        + (f"Effectiveness: {effectiveness:.2%}" if effectiveness else "")
+                    ),
+                    'timestamp': datetime.now()
+                }
+                if not hasattr(self, 'notifications'):
+                    self.notifications = []
+                self.notifications.append(notification)
+            
+        except Exception as e:
+            logger.error(f"Error logging interaction: {str(e)}")
+
+    def update_emotions(self, mother_response: Union[EmotionalState, torch.Tensor]) -> None:
+        """Update emotional state based on mother's response."""
+        try:
+            # Convert mother's response to tensor if it's an EmotionalState
+            if isinstance(mother_response, EmotionalState):
+                mother_emotions = torch.tensor(mother_response.to_vector(), device=self.device)
+            else:
+                mother_emotions = ensure_tensor_on_device(mother_response, self.device)
+            
+            # Use emotional regulation to modulate response
+            regulated_response = self.emotional_regulation(
+                mother_emotions,
+                context={'stage': self.current_stage.value}
+            )
+            
+            # Convert tensor back to EmotionalState
+            self.emotional_state = ensure_emotional_state(regulated_response)
+            
+            # Log emotional interaction
+            self.log_interaction('emotional', {
+                'mother_response': mother_response,
+                'regulated_response': regulated_response,
+                'result_state': self.emotional_state
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in update_emotions: {str(e)}")
+            # Fallback to default emotional state
+            self.emotional_state = EmotionalState(0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.5, 0.5)
 
     def express_feeling(self) -> str:
-        """Generate an expression of the current emotional state.
-        
-        Returns:
-            String describing the current emotional state
-        """
-        # Ensure emotional_state is a dataclass instance, not a tensor
-        if isinstance(self.emotional_state, torch.Tensor):
-            # Convert tensor to EmotionalState if needed
-            if self.emotional_state.size(0) == 4:  # Handle legacy 4-dimension tensors
-                self.emotional_state = EmotionalState(
-                    happiness=float(self.emotional_state[0]),
-                    sadness=float(self.emotional_state[1]),
-                    anger=float(self.emotional_state[2]),
-                    fear=float(self.emotional_state[3]),
-                    surprise=0.0,  # Default values for additional dimensions
-                    disgust=0.0,
-                    trust=0.5,
-                    anticipation=0.5
-                )
-            else:  # Handle full 8-dimension tensors
-                self.emotional_state = EmotionalState(
-                    happiness=float(self.emotional_state[0]),
-                    sadness=float(self.emotional_state[1]),
-                    anger=float(self.emotional_state[2]),
-                    fear=float(self.emotional_state[3]),
-                    surprise=float(self.emotional_state[4]) if self.emotional_state.size(0) > 4 else 0.0,
-                    disgust=float(self.emotional_state[5]) if self.emotional_state.size(0) > 5 else 0.0,
-                    trust=float(self.emotional_state[6]) if self.emotional_state.size(0) > 6 else 0.5,
-                    anticipation=float(self.emotional_state[7]) if self.emotional_state.size(0) > 7 else 0.5
-                )
+        """Generate an expression of the current emotional state."""
+        # Ensure emotional_state is an EmotionalState instance
+        self.emotional_state = ensure_emotional_state(self.emotional_state)
         
         # Map emotions to expressions
         emotions = {
@@ -751,55 +979,58 @@ class DigitalChild:
         return expression
 
     def learn(self, mother_feedback: str) -> None:
-        """Process and learn from mother's feedback.
-        
-        Args:
-            mother_feedback: The feedback text from the mother
-        """
-        # TODO: NEURAL-125 - Implement learning from feedback
-        # Pass curriculum data to autonomous learner during feedback processing
-        self.autonomous_learner.process_feedback(
-            mother_feedback,
-            current_stage=self.current_stage,
-            learning_objectives=self.curriculum.get_objectives(self.current_stage)
-        )
-        self.metacognition.update(mother_feedback)
-        
+        """Process and learn from mother's feedback."""
+        try:
+            # Pass curriculum data to autonomous learner during feedback processing
+            self.autonomous_learner.process_feedback(
+                mother_feedback,
+                current_stage=self.current_stage,
+                learning_objectives=self.curriculum.get_objectives(self.current_stage)
+            )
+            
+            # Convert emotional state to tensor for metacognition update
+            if isinstance(self.emotional_state, EmotionalState):
+                current_state = torch.tensor(self.emotional_state.to_vector(), device=self.device)
+            else:
+                current_state = ensure_tensor_on_device(self.emotional_state, self.device)
+            
+            # Update metacognition with current state and feedback
+            self.metacognition.update(
+                current_state=current_state,
+                feedback=mother_feedback,
+                learning_outcome=self.autonomous_learner.get_learning_rate()
+            )
+            
+            # Log learning interaction
+            self.log_interaction('learning', {
+                'feedback': mother_feedback,
+                'learning_rate': self.autonomous_learner.get_learning_rate(),
+                'metacognition_state': self.metacognition.get_metrics()
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in learn method: {str(e)}")
+            # Ensure we don't lose the feedback even if processing fails
+            self.metacognition.update(
+                current_state=torch.zeros(8, device=self.device),
+                feedback=mother_feedback
+            )
+
     def age(self) -> None:
         """Age the digital child by one time step."""
         # TODO: NEURAL-125 - Implement aging logic
         pass
 
     def get_warning_indicators(self) -> Dict[str, Any]:
-        """Get current warning indicators for development monitoring.
-        
-        Returns:
-            Dict containing:
-            - warning_state: Current warning level (GREEN/YELLOW/RED)
-            - metrics: Dict of monitored metrics (emotional_stability, learning_efficiency, etc.)
-            - recent_warnings: List of recent warning events
-            - stage_limit: Maximum safe speed for current stage
-            - speed_multiplier: Current speed multiplier
-        """
+        """Get current warning indicators for development monitoring."""
         try:
             # Get metrics from various systems
             metacog_metrics = self.metacognition.get_metrics()
             learning_rate = self.autonomous_learner.get_learning_rate()
             stage_reqs = self.curriculum.get_stage_requirements()
             
-            # Calculate emotional stability
-            emotional_state = self.emotional_state
-            if isinstance(emotional_state, torch.Tensor):
-                emotional_state = EmotionalState(
-                    happiness=float(emotional_state[0]),
-                    sadness=float(emotional_state[1]),
-                    anger=float(emotional_state[2]),
-                    fear=float(emotional_state[3]),
-                    surprise=float(emotional_state[4]) if len(emotional_state) > 4 else 0.0,
-                    disgust=float(emotional_state[5]) if len(emotional_state) > 5 else 0.0,
-                    trust=float(emotional_state[6]) if len(emotional_state) > 6 else 0.5,
-                    anticipation=float(emotional_state[7]) if len(emotional_state) > 7 else 0.5
-                )
+            # Ensure emotional_state is an EmotionalState instance
+            self.emotional_state = ensure_emotional_state(self.emotional_state)
             
             # Calculate key metrics
             metrics = {
@@ -1106,100 +1337,64 @@ class DigitalChild:
                 'success_criteria': {}
             }
 
-def main() -> None:
-    """Main function to run the Neural Child simulation."""
+    def get_notifications(self, max_count: int = 5) -> List[Dict[str, Any]]:
+        """Get recent notifications.
+        
+        Args:
+            max_count: Maximum number of notifications to return
+            
+        Returns:
+            List of recent notifications
+        """
+        if not hasattr(self, 'notifications'):
+            self.notifications = []
+        return sorted(
+            self.notifications,
+            key=lambda x: x['timestamp'],
+            reverse=True
+        )[:max_count]
+        
+    def clear_notifications(self) -> None:
+        """Clear all notifications."""
+        if hasattr(self, 'notifications'):
+            self.notifications = []
+
+if __name__ == "__main__":
     try:
+        # Initialize logging
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        logger = logging.getLogger(__name__)
+        
+        # Create instances
         mother = MotherLLM()
         child = DigitalChild()
         
-        # Initialize trainer with all required components
-        trainer = DevelopmentalTrainer(
-            child_model=child.neural_model,
-            memory=child.memory,
-            emotional_regulation=child.emotional_regulation,
-            curriculum_manager=child.curriculum,
-            mother_llm=mother,
-            metacognition_system=child.metacognition,
-            config={
-                'device': child.device,
-                'learning_rate': 3e-4,  # Default learning rate from config.yaml
-                'max_iterations': 1000,
-                'checkpoint_dir': 'checkpoints',
-                'log_dir': 'logs'
-            }
+        logger.info("Neural Child System Initialized")
+        logger.info(f"Current Stage: {child.current_stage.name}")
+        logger.info(f"Age: {child.age_months} months")
+        logger.info(f"Emotional State: {child.emotional_state.get_emotional_description()}")
+        
+        # Perform initial interaction
+        response, emotional_state = mother.perform_interaction(
+            child,
+            "EMOTIONAL",
+            "SMILE"
         )
         
-        logger.info("Starting Neural Child simulation...")
+        logger.info(f"Mother's Response: {response}")
+        logger.info(f"Child's Emotional State: {emotional_state.get_emotional_description()}")
         
-        # Main interaction loop
-        while True:
-            # Get child's current state
-            child_expression = child.express_feeling()
-            warning_indicators = child.get_warning_indicators()
-            acceleration_metrics = child.get_acceleration_metrics()
-            
-            # Get available interactions
-            available_interactions = child.get_available_interactions()
-            
-            # Display current state
-            logger.info(f"\nChild State: {child_expression}")
-            logger.info(f"Development Stage: {child.current_stage.name}")
-            logger.info(f"Age (months): {child.age_months}")
-            logger.info(f"Warning State: {warning_indicators['warning_state']}")
-            
-            # Display development metrics
-            logger.info("\nDevelopment Metrics:")
-            logger.info(f"Current Speed: {acceleration_metrics['current_multiplier']}x")
-            logger.info(f"Max Safe Speed: {acceleration_metrics['max_safe_multiplier']}x")
-            logger.info(f"Speed Locked: {'Yes' if child.speed_locked else 'No'}")
-            logger.info(f"Stability Factor: {acceleration_metrics['stability_factor']:.2f}")
-            logger.info(f"Warning Penalty: {acceleration_metrics['warning_penalty']:.2f}")
-            
-            # Display mother's interaction tab
-            logger.info("\nMother's Interaction Tab:")
-            logger.info("Available Categories:")
-            for category, interactions in available_interactions.items():
-                logger.info(f"\n{category}:")
-                for interaction in interactions:
-                    description = child.get_interaction_description(category, interaction)
-                    cooldown = mother.get_interaction_cooldown()
-                    status = "Ready" if cooldown == 0 else f"Cooldown: {cooldown}s"
-                    logger.info(f"  - {interaction}: {description} ({status})")
-            
-            # Check interaction cooldown
-            cooldown = mother.get_interaction_cooldown()
-            if cooldown > 0:
-                logger.info(f"\nInteraction cooldown: {cooldown} seconds remaining")
-            
-            # Generate mother's response
-            response_text, mother_emotions = mother.generate_stimulus(
-                child.current_stage, 
-                child_expression
-            )
-            
-            # Update child state
-            child.update_emotions(mother_emotions)
-            child.learn(response_text)
-            
-            # Check for development milestones
-            if trainer.check_progress():
-                child.age()
-                logger.info(f"Child progressed to stage: {child.current_stage}")
-            
-            # Monitor system resources
-            if psutil.virtual_memory().percent > 90:
-                logger.warning("High memory usage detected")
-                
-            # Save state periodically
-            child.save_state()
-            
-    except KeyboardInterrupt:
-        logger.info("Simulation ended by user")
-        child.save_state()  # Save state on exit
-    except Exception as error:
-        logger.error(f"Simulation error: {error}")
-        child.save_state()  # Save state on error
+        # Update child's emotional state
+        child.update_emotions(emotional_state)
+        
+        # Save the initial state
+        child.save_state()
+        
+        logger.info("Initial interaction complete. System ready for further interactions.")
+        
+    except Exception as e:
+        logger.error(f"Error during initialization: {str(e)}")
         raise
-
-if __name__ == "__main__":
-    main()

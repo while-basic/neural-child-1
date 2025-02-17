@@ -4,6 +4,8 @@ import { useEffect, useState } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
+import { ModelUpload } from "@/components/ui/model-upload"
+import { NeuralVisualizations } from "@/components/neural-visualizations"
 import dynamic from "next/dynamic"
 import { 
   Brain, Activity, AlertTriangle, Loader2, 
@@ -308,6 +310,10 @@ export default function Dashboard() {
             <Settings className="h-4 w-4 mr-2" />
             Settings
           </TabsTrigger>
+          <TabsTrigger value="system" className="data-[state=active]:bg-white data-[state=active]:text-black">
+            <Cpu className="h-4 w-4 mr-2" />
+            System
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -372,6 +378,80 @@ export default function Dashboard() {
 
         {/* Neural Tab */}
         <TabsContent value="neural">
+          <div className="space-y-4">
+            {/* Real-time Neural Visualizations */}
+            <NeuralVisualizations />
+
+            {/* Existing Neural Metrics */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Neural Network Topology */}
+              <Card className="bg-black border border-white/10">
+                <CardHeader>
+                  <CardTitle>Neural Network Topology</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Plot
+                    data={[{
+                      type: "scatter3d",
+                      mode: "markers",
+                      x: Array.from({length: 50}, () => Math.random() * 2 - 1),
+                      y: Array.from({length: 50}, () => Math.random() * 2 - 1),
+                      z: Array.from({length: 50}, () => Math.random() * 2 - 1),
+                      marker: {
+                        size: 3,
+                        color: "white",
+                        opacity: 0.8
+                      }
+                    }]}
+                    layout={{
+                      paper_bgcolor: "black",
+                      plot_bgcolor: "black",
+                      scene: {
+                        xaxis: { gridcolor: "white", zerolinecolor: "white" },
+                        yaxis: { gridcolor: "white", zerolinecolor: "white" },
+                        zaxis: { gridcolor: "white", zerolinecolor: "white" },
+                        bgcolor: "black"
+                      },
+                      margin: { t: 0, r: 0, b: 0, l: 0 }
+                    }}
+                    config={{ responsive: true }}
+                    className="w-full h-[400px]"
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Synaptic Activity */}
+              <Card className="bg-black border border-white/10">
+                <CardHeader>
+                  <CardTitle>Synaptic Activity</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-sm mb-2">Connection Strength</div>
+                      <div className="text-2xl font-bold">87.5%</div>
+                      <Progress value={87.5} className="mt-2" />
+                    </div>
+                    <div>
+                      <div className="text-sm mb-2">Firing Rate</div>
+                      <div className="text-2xl font-bold">124 Hz</div>
+                      <Progress value={62} className="mt-2" />
+                    </div>
+                    <div>
+                      <div className="text-sm mb-2">Plasticity</div>
+                      <div className="text-2xl font-bold">92.1%</div>
+                      <Progress value={92.1} className="mt-2" />
+                    </div>
+                    <div>
+                      <div className="text-sm mb-2">Synchronization</div>
+                      <div className="text-2xl font-bold">78.3%</div>
+                      <Progress value={78.3} className="mt-2" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Neural Network Topology */}
             <Card className="bg-black border border-white/10">
@@ -723,6 +803,24 @@ export default function Dashboard() {
                     ))}
                   </div>
                 </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* System Tab */}
+        <TabsContent value="system">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {/* Model Management */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Brain className="h-4 w-4" />
+                  Model Management
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ModelUpload />
               </CardContent>
             </Card>
           </div>

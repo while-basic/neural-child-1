@@ -158,3 +158,67 @@ class AutonomousLearner:
             'curriculum_difficulty': 0.1
         }
         self.performance_history = []
+
+    def process_feedback(self, feedback: str, current_stage: Any, learning_objectives: Dict[str, Any]) -> None:
+        """Process feedback from mother and update learning parameters.
+        
+        Args:
+            feedback: The feedback text from the mother
+            current_stage: The current developmental stage
+            learning_objectives: Dictionary of current learning objectives
+        """
+        try:
+            # Extract learning signals from feedback
+            performance = self._evaluate_feedback(feedback)
+            
+            # Update learning parameters based on performance
+            self._adapt_parameters(performance)
+            
+            # Record performance
+            self.performance_history.append(performance)
+            
+            # Adjust curriculum difficulty based on performance
+            if len(self.performance_history) >= 5:
+                recent_performance = np.mean(self.performance_history[-5:])
+                if recent_performance > 0.8:
+                    self.learning_parameters['curriculum_difficulty'] = min(
+                        1.0,
+                        self.learning_parameters['curriculum_difficulty'] + 0.1
+                    )
+                elif recent_performance < 0.4:
+                    self.learning_parameters['curriculum_difficulty'] = max(
+                        0.1,
+                        self.learning_parameters['curriculum_difficulty'] - 0.1
+                    )
+            
+            # Decay exploration rate
+            self.learning_parameters['exploration_rate'] = max(
+                self.min_exploration,
+                self.learning_parameters['exploration_rate'] * self.exploration_decay
+            )
+            
+        except Exception as e:
+            print(f"Error processing feedback: {str(e)}")
+    
+    def _evaluate_feedback(self, feedback: str) -> float:
+        """Evaluate feedback to determine learning performance.
+        
+        Args:
+            feedback: The feedback text to evaluate
+            
+        Returns:
+            Float between 0 and 1 indicating performance
+        """
+        # Simple sentiment-based evaluation for now
+        positive_words = {'good', 'great', 'excellent', 'well', 'correct', 'right', 'yes'}
+        negative_words = {'bad', 'wrong', 'incorrect', 'no', 'not', "don't", 'stop'}
+        
+        words = set(feedback.lower().split())
+        positive_count = len(words.intersection(positive_words))
+        negative_count = len(words.intersection(negative_words))
+        
+        total_count = positive_count + negative_count
+        if total_count == 0:
+            return 0.5  # Neutral feedback
+            
+        return positive_count / total_count

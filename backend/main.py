@@ -13,6 +13,9 @@ from dataclasses import dataclass
 import logging
 import os
 import time
+import shutil
+import numpy as np
+from pydantic import BaseModel
 
 from llm_module import chat_completion
 from child_model import DynamicNeuralChild
@@ -32,7 +35,7 @@ from curriculum import DevelopmentalCurriculum
 # Remove circular import
 # from main import DigitalChild, MotherLLM
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 import asyncio
@@ -80,6 +83,67 @@ current_state = DevelopmentState(
     currentStage="infant",
     ageMonths=6.0
 )
+
+class NeuralActivityData(BaseModel):
+    """Real-time neural network activity data."""
+    timestamp: float
+    activity_values: List[float]
+    mean_activation: float
+    spike_rate: float
+    network_load: float
+
+class NetworkTopologyData(BaseModel):
+    """3D network topology data."""
+    node_positions: List[List[float]]  # [[x, y, z], ...]
+    edge_connections: List[List[int]]  # [[node1_idx, node2_idx], ...]
+    node_activations: List[float]
+    edge_weights: List[float]
+
+# Global state for neural metrics
+neural_activity_buffer = []
+MAX_ACTIVITY_POINTS = 100
+
+def generate_neural_activity() -> NeuralActivityData:
+    """Generate simulated neural network activity data."""
+    current_time = time.time()
+    activity = np.random.normal(0.5, 0.15, 10).clip(0, 1).tolist()
+    mean_act = np.mean(activity)
+    spike_rate = np.random.normal(100, 10)  # Hz
+    network_load = np.random.normal(0.7, 0.1).clip(0, 1)
+    
+    return NeuralActivityData(
+        timestamp=current_time,
+        activity_values=activity,
+        mean_activation=mean_act,
+        spike_rate=spike_rate,
+        network_load=network_load
+    )
+
+def generate_network_topology() -> NetworkTopologyData:
+    """Generate simulated 3D network topology data."""
+    num_nodes = 50
+    # Generate node positions in 3D space
+    positions = np.random.normal(0, 1, (num_nodes, 3)).tolist()
+    
+    # Generate random connections (edges)
+    num_edges = num_nodes * 2
+    edges = []
+    for _ in range(num_edges):
+        node1 = np.random.randint(0, num_nodes)
+        node2 = np.random.randint(0, num_nodes)
+        if node1 != node2:
+            edges.append([node1, node2])
+    
+    # Generate node activations and edge weights
+    node_acts = np.random.normal(0.5, 0.15, num_nodes).clip(0, 1).tolist()
+    edge_weights = np.random.normal(0.5, 0.15, len(edges)).clip(0, 1).tolist()
+    
+    return NetworkTopologyData(
+        node_positions=positions,
+        edge_connections=edges,
+        node_activations=node_acts,
+        edge_weights=edge_weights
+    )
 
 @app.get("/api/development/state")
 async def get_development_state() -> DevelopmentState:
@@ -133,6 +197,83 @@ async def interact(request: InteractionRequest):
         "response": f"Interaction processed: {request.interaction}",
         "emotionalState": current_state.emotionalState
     }
+
+@app.post("/api/models/upload")
+async def upload_model(
+    model_file: UploadFile = File(...),
+    model_name: str = None
+) -> Dict[str, str]:
+    """Upload a specific model file to the system.
+    
+    Args:
+        model_file (UploadFile): The model file to upload
+        model_name (str, optional): Custom name for the model. Defaults to original filename.
+        
+    Returns:
+        Dict[str, str]: Response containing upload status and model information
+        
+    Raises:
+        HTTPException: If file upload fails or invalid file type
+    """
+    if not model_file.filename.endswith(('.pt', '.pth', '.ckpt')):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Only PyTorch model files (.pt, .pth, .ckpt) are supported."
+        )
+    
+    try:
+        # Create models directory if it doesn't exist
+        os.makedirs('models', exist_ok=True)
+        
+        # Use provided model name or original filename
+        save_name = model_name or model_file.filename
+        file_path = os.path.join('models', save_name)
+        
+        # Save uploaded file
+        with open(file_path, 'wb') as buffer:
+            shutil.copyfileobj(model_file.file, buffer)
+            
+        return {
+            "status": "success",
+            "message": f"Model uploaded successfully as {save_name}",
+            "model_path": file_path
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to upload model: {str(e)}"
+        )
+
+@app.get("/api/neural/activity")
+async def get_neural_activity() -> NeuralActivityData:
+    """Get current neural network activity data."""
+    return generate_neural_activity()
+
+@app.get("/api/neural/topology")
+async def get_network_topology() -> NetworkTopologyData:
+    """Get current network topology data."""
+    return generate_network_topology()
+
+async def neural_metrics_generator():
+    """Generate real-time neural metrics stream."""
+    while True:
+        activity_data = generate_neural_activity()
+        topology_data = generate_network_topology()
+        
+        yield {
+            "event": "neural_update",
+            "data": {
+                "activity": activity_data.model_dump(),
+                "topology": topology_data.model_dump()
+            }
+        }
+        await asyncio.sleep(1)  # Update every second
+
+@app.get("/api/neural/stream")
+async def stream_neural_metrics():
+    """Stream real-time neural network metrics."""
+    return EventSourceResponse(neural_metrics_generator())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000) 
