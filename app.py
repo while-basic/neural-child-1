@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 import torch
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import plotly.graph_objects as go
 import plotly.express as px
 from plotly.subplots import make_subplots
@@ -15,6 +15,8 @@ import threading
 import queue
 import os
 from developmental_stages import DevelopmentalStage, DevelopmentalSystem
+from typing import Optional, Dict, List, Any, Union
+from pathlib import Path
 
 # Define stage templates for interactions
 stage_templates = {
@@ -760,29 +762,100 @@ def add_time_controls():
     st.sidebar.markdown("---")
     st.sidebar.subheader("⏰ Time Controls")
     
-    # Add speed multiplier slider
+    # Add speed multiplier slider with warning indicators
     if 'speed_multiplier' not in st.session_state:
         st.session_state.speed_multiplier = 1.0
     
-    st.session_state.speed_multiplier = st.sidebar.slider(
-        "Development Speed Multiplier",
-        min_value=1.0,
-        max_value=100.0,
-        value=st.session_state.speed_multiplier,
-        step=1.0,
-        help="Increase to speed up development (1x = normal, 100x = very fast)"
-    )
+    # Get warning indicators
+    warning_indicators = st.session_state.child.get_warning_indicators()
+    warning_state = warning_indicators['warning_state']
     
-    # Display current accelerated age
-    age = format_detailed_age(st.session_state.birth_time)
-    st.sidebar.markdown(f"**Accelerated Age:** {age}")
+    # Display warning state with color coding
+    warning_colors = {
+        "RED": "🔴",
+        "YELLOW": "🟡",
+        "GREEN": "🟢"
+    }
     
-    # Display time acceleration info with current multiplier
+    st.sidebar.markdown(f"**Current Warning State: {warning_colors[warning_state]} {warning_state}**")
+    
+    # Display warning metrics
+    with st.sidebar.expander("Warning Metrics", expanded=True):
+        metrics = warning_indicators['metrics']
+        
+        # Emotional Stability
+        stability = metrics['emotional_stability']
+        stability_color = "🟢" if stability > 0.6 else "🟡" if stability > 0.3 else "🔴"
+        st.markdown(f"{stability_color} Emotional Stability: {stability:.2%}")
+        
+        # Learning Efficiency
+        efficiency = metrics['learning_efficiency']
+        efficiency_color = "🟢" if efficiency > 0.6 else "🟡" if efficiency > 0.4 else "🔴"
+        st.markdown(f"{efficiency_color} Learning Efficiency: {efficiency:.2%}")
+        
+        # Attention Level
+        attention = metrics['attention_level']
+        attention_color = "🟢" if attention > 0.6 else "🟡" if attention > 0.3 else "🔴"
+        st.markdown(f"{attention_color} Attention Level: {attention:.2%}")
+        
+        # Overstimulation Risk
+        risk = metrics['overstimulation_risk']
+        risk_color = "🟢" if risk < 0.4 else "🟡" if risk < 0.7 else "🔴"
+        st.markdown(f"{risk_color} Overstimulation Risk: {risk:.2%}")
+    
+    # Show recent warnings if any
+    if warning_indicators['recent_warnings']:
+        with st.sidebar.expander("Recent Warnings", expanded=False):
+            for warning in warning_indicators['recent_warnings']:
+                st.markdown(f"**{warning['timestamp'].strftime('%H:%M:%S')}** - {warning['state']}")
+                st.markdown(f"_{warning['reason']}_")
+                st.markdown("---")
+    
+    # Add speed multiplier slider with dynamic max value
+    max_speed = warning_indicators['stage_limit']
+    current_speed = warning_indicators['speed_multiplier']
+    
+    # Display current speed with color indicator
+    speed_color = "🟢" if current_speed <= 3.0 else "🟡" if current_speed <= 4.0 else "🔴"
+    st.sidebar.markdown(f"**Current Speed: {speed_color} {current_speed:.1f}x**")
+    
+    # Only allow speed adjustment if not in RED warning state
+    if warning_state != "RED":
+        new_speed = st.sidebar.slider(
+            "Development Speed Multiplier",
+            min_value=1.0,
+            max_value=max_speed,
+            value=current_speed,
+            step=0.5,
+            help=f"Maximum safe speed for current stage: {max_speed}x"
+        )
+        
+        if new_speed != current_speed:
+            st.session_state.child.set_development_speed(new_speed)
+    else:
+        st.sidebar.warning("⚠️ Speed locked at 1x due to critical warnings")
+    
+    # Display acceleration safety information
+    with st.sidebar.expander("Acceleration Safety Info", expanded=False):
+        st.markdown("""
+        **Speed Guidelines:**
+        - 1-2x: Safe for all stages
+        - 2-3x: Monitor emotional state
+        - 3-4x: Close monitoring required
+        - 4-5x: Maximum caution needed
+        
+        **Warning Levels:**
+        🟢 Optimal - Safe to maintain speed
+        🟡 Warning - Consider reducing speed
+        🔴 Critical - Speed automatically reduced
+        """)
+    
+    # Display time acceleration info
     st.sidebar.markdown(f"""
-    **Time Acceleration ({st.session_state.speed_multiplier}x):**
-    - 1 real minute = {int(st.session_state.speed_multiplier)} baby hours
-    - 1 real hour = {int(st.session_state.speed_multiplier * 60)} baby hours
-    - 1 real day = {int(st.session_state.speed_multiplier * 60 * 24)} baby hours
+    **Time Acceleration ({current_speed}x):**
+    - 1 real minute = {int(current_speed)} baby hours
+    - 1 real hour = {int(current_speed * 60)} baby hours
+    - 1 real day = {int(current_speed * 60 * 24)} baby hours
     """)
     
     # Add development speed indicator
@@ -1332,6 +1405,84 @@ def handle_interaction():
             if debug_mode:
                 st.exception(e)
 
+def render_warning_dashboard():
+    """Display warning system dashboard"""
+    st.subheader("⚠️ Development Warning System")
+    
+    # Get current warning indicators
+    warning_indicators = st.session_state.child.get_warning_indicators()
+    
+    # Create columns for different metric categories
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Current Status")
+        metrics = warning_indicators['metrics']
+        
+        # Create gauge charts for each metric
+        for metric, value in metrics.items():
+            fig = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=value * 100,
+                title={'text': metric.replace('_', ' ').title()},
+                gauge={
+                    'axis': {'range': [0, 100]},
+                    'bar': {'color': "royalblue"},
+                    'steps': [
+                        {'range': [0, 30], 'color': "red"},
+                        {'range': [30, 60], 'color': "yellow"},
+                        {'range': [60, 100], 'color': "green"}
+                    ],
+                    'threshold': {
+                        'line': {'color': "red", 'width': 4},
+                        'thickness': 0.75,
+                        'value': value * 100
+                    }
+                }
+            ))
+            fig.update_layout(height=200)
+            st.plotly_chart(fig, use_container_width=True)
+    
+    with col2:
+        st.subheader("Warning History")
+        if warning_indicators['recent_warnings']:
+            # Create timeline of warnings
+            warning_df = pd.DataFrame(warning_indicators['recent_warnings'])
+            fig = px.timeline(
+                warning_df,
+                x_start="timestamp",
+                x_end="timestamp",
+                y="state",
+                color="state",
+                hover_data=["reason"],
+                title="Recent Warning Events"
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No warnings recorded")
+    
+    # Add warning state explanation
+    with st.expander("Warning State Information", expanded=False):
+        st.markdown("""
+        ### Warning State Levels
+        
+        🔴 **Critical (Red)**
+        - Immediate action required
+        - Development speed automatically reduced
+        - Focus on stabilization
+        
+        🟡 **Warning (Yellow)**
+        - Increased monitoring needed
+        - Consider reducing speed
+        - Review current approach
+        
+        🟢 **Normal (Green)**
+        - Safe to continue
+        - Regular monitoring
+        - Optimal development conditions
+        """)
+
 def main():
     # Add time controls to sidebar
     add_time_controls()
@@ -1357,15 +1508,18 @@ def main():
         st.metric("Total Interactions", len(st.session_state.conversation_history))
     with col4:
         dev_speed = calculate_development_speed()
-        st.metric("Development Speed", f"{dev_speed:.1f}x")
+        warning_state = st.session_state.child.warning_state
+        speed_color = "🟢" if warning_state == "GREEN" else "🟡" if warning_state == "YELLOW" else "🔴"
+        st.metric("Development Speed", f"{speed_color} {dev_speed:.1f}x")
     
     # Main content tabs
     tabs = st.tabs([
-        "Digital Child", 
+        "Digital Child",
         "Mother's Interface",
         "Development Tracking",
         "Milestones & Progress",
-        "Analytics"
+        "Analytics",
+        "Warning System"  # New tab
     ])
     
     with tabs[0]:  # Digital Child Tab
@@ -1405,7 +1559,7 @@ def main():
     
     with tabs[1]:  # Mother's Interface Tab
         # Add debug mode toggle
-        debug_mode = st.sidebar.checkbox("Debug Mode", value=False, 
+        debug_mode = st.sidebar.checkbox("Debug Mode", value=True, 
                                        help="Show raw LLM responses and processing details")
         
         # Add interaction guide toggle in sidebar
@@ -1650,6 +1804,9 @@ def main():
             st.subheader("Decision Making")
             decision_fig = create_decision_analysis_chart()
             st.plotly_chart(decision_fig, use_container_width=True)
+
+    with tabs[5]:  # Warning System tab
+        render_warning_dashboard()
 
     # Footer with save/load functionality
     st.divider()
