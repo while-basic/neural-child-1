@@ -1,95 +1,131 @@
 # llm_module.py
 
+"""
+llm_module.py - LLM Integration Module
+Created: 2024-03-21
+Description: Handles interactions with LM Studio and other LLM backends.
+
+Author: Dr. Celaya
+Project: Neural Child + Meta-Learning
+"""
+
 import requests
+import time
 import json
-from typing import Optional, Dict, Any, List
+import logging
+from typing import List, Dict, Any, Optional
+from datetime import datetime
 from schemas import MotherResponse
 
-def chat_completion(
-    system_prompt: str,
-    messages: Optional[List[Dict[str, str]]] = None,
-    user_prompt: Optional[str] = None,
-    model: str = "local-model",
-    temperature: float = 0.8,  # Slightly more creative
-    max_tokens: int = 2048,
-    stream: bool = False,
-    server_url: str = "http://localhost:1234/v1/chat/completions",
-    structured_output: bool = False
-) -> str:
-    """
-    Enhanced chat completion function with better error handling and retries.
-    Configured for LM Studio's API format.
-    """
-    try:
-        # Prepare messages list
-        message_list = []
+# Configure logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+class LMStudioConnection:
+    def __init__(self, 
+                 base_url: str = "http://localhost:1234",
+                 max_retries: int = 3,
+                 timeout: int = 30,
+                 backoff_factor: float = 1.5):
+        self.base_url = base_url
+        self.max_retries = max_retries
+        self.timeout = timeout
+        self.backoff_factor = backoff_factor
+        self.session = requests.Session()
         
-        # Add system message with emotional guidance
+    def chat_completion(self, 
+                       messages: List[Dict[str, str]], 
+                       system_prompt: Optional[str] = None,
+                       temperature: float = 0.8,
+                       max_tokens: int = 2048) -> str:
+        """
+        Send a chat completion request to LM Studio with robust error handling
+        """
         if system_prompt:
-            enhanced_prompt = system_prompt + "\n\nPlease respond with emotional awareness and empathy. Use *asterisks* to show emotional expressions and body language."
-            message_list.append({"role": "system", "content": enhanced_prompt})
+            messages.insert(0, {
+                "role": "system",
+                "content": system_prompt
+            })
             
-        # Add previous messages if provided
-        if messages:
-            message_list.extend(messages)
-            
-        # Add user prompt if provided
-        if user_prompt:
-            message_list.append({"role": "user", "content": user_prompt})
-            
-        # Ensure we have at least one message
-        if not message_list:
-            raise ValueError("Either messages or user_prompt must be provided")
-            
-        # Prepare the request
-        headers = {
-            "Content-Type": "application/json"
-        }
-        
-        data = {
-            "messages": message_list,
+        payload = {
+            "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
-            "stream": False  # Always false for LM Studio
+            "stream": False
         }
         
-        # Print request for debugging
-        print(f"\nSending request to LM Studio:")
-        print(json.dumps(data, indent=2))
+        logger.debug(f"\nSending request to LM Studio:\n{json.dumps(payload, indent=2)}")
         
-        # Make the request with retry logic
-        for attempt in range(3):  # Try up to 3 times
+        for attempt in range(self.max_retries):
             try:
-                response = requests.post(
-                    server_url,
-                    headers=headers,
-                    json=data,
-                    timeout=60
+                current_timeout = self.timeout * (self.backoff_factor ** attempt)
+                response = self.session.post(
+                    f"{self.base_url}/v1/chat/completions",
+                    json=payload,
+                    timeout=current_timeout
                 )
                 response.raise_for_status()
-                break  # Success, exit retry loop
-            except requests.exceptions.RequestException as e:
-                if attempt == 2:  # Last attempt
-                    print(f"Error connecting to LM Studio after 3 attempts: {str(e)}")
-                    return "I apologize, but I'm having trouble connecting to my language processing system. Could you please try again in a moment?"
-                print(f"Attempt {attempt + 1} failed, retrying...")
-                import time
-                time.sleep(1)  # Wait a second before retrying
-        
-        # Parse the response
-        result = response.json()
-        
-        # Print raw response for debugging
-        print(f"\nResponse from LM Studio:")
-        print(json.dumps(result, indent=2))
-        
-        # Extract the response text
-        if "choices" in result and len(result["choices"]) > 0:
-            message = result["choices"][0].get("message", {})
-            return message.get("content", "").strip()
+                
+                result = response.json()
+                if "choices" in result and len(result["choices"]) > 0:
+                    return result["choices"][0]["message"]["content"]
+                else:
+                    logger.error(f"Invalid response format: {result}")
+                    continue
+                    
+            except requests.Timeout:
+                logger.warning(f"Attempt {attempt + 1} timed out after {current_timeout}s, retrying...")
+                if attempt == self.max_retries - 1:
+                    return self._generate_fallback_response()
+                    
+            except requests.RequestException as e:
+                logger.error(f"Request error on attempt {attempt + 1}: {str(e)}")
+                if attempt == self.max_retries - 1:
+                    return self._generate_fallback_response()
+                time.sleep(attempt * 2)  # Exponential backoff
+                
+            except Exception as e:
+                logger.error(f"Unexpected error on attempt {attempt + 1}: {str(e)}")
+                if attempt == self.max_retries - 1:
+                    return self._generate_fallback_response()
+                time.sleep(attempt * 2)
+                
+        return self._generate_fallback_response()
+    
+    def _generate_fallback_response(self) -> str:
+        """Generate a graceful fallback response when LM Studio is unavailable"""
+        fallback_responses = [
+            "*shows gentle concern* I'm having a bit of trouble with my thoughts right now. Could we pause for a moment?",
+            "*looks thoughtful* I need a moment to gather my thoughts. Shall we try again?",
+            "*smiles apologetically* My mind is a little fuzzy. Could you give me a minute to clear my head?",
+            "*maintains warm presence* I'm experiencing some difficulty processing right now. Let's take a brief pause."
+        ]
+        return fallback_responses[int(time.time()) % len(fallback_responses)]
+    
+    def health_check(self) -> bool:
+        """Check if LM Studio is available and responding"""
+        try:
+            response = self.session.get(f"{self.base_url}/health", timeout=5)
+            return response.status_code == 200
+        except:
+            return False
             
-        return "I apologize, but I'm unable to provide a response at the moment."
-        
-    except Exception as e:
-        print(f"Error in chat_completion: {str(e)}")
-        return "I apologize, but I encountered an error while processing your request. Could you please try again?"
+    def __del__(self):
+        """Clean up resources"""
+        self.session.close()
+
+# Global LM Studio connection instance
+lm_studio = LMStudioConnection()
+
+def chat_completion(system_prompt: str, messages: List[Dict[str, str]]) -> str:
+    """
+    Wrapper function for chat completion with automatic reconnection
+    """
+    global lm_studio
+    
+    # Check connection health and reinitialize if needed
+    if not lm_studio.health_check():
+        logger.info("Reinitializing LM Studio connection...")
+        lm_studio = LMStudioConnection()
+    
+    return lm_studio.chat_completion(messages, system_prompt)

@@ -114,6 +114,14 @@ class DynamicNeuralChild(nn.Module):
         self.birth_time = time.time()  # Record birth time for age calculation
         self.aging_rate = 1.0  # Years per real second - can be adjusted
         
+        # Initialize core systems
+        self.sensory = SensoryExperience(device=self.device)
+        self.emotional_system = EmotionalRegulation(emotion_dim=4, context_window=5, memory_dim=32)
+        self.memory = DifferentiableMemory(memory_size=1024, embedding_dim=768, device=self.device)
+        self.theory_of_mind = TheoryOfMind()
+        self.attachment = AttachmentSystem()
+        self.defense_mechanisms = DefenseMechanisms()
+        
         # Core neural layers
         self.layers = nn.ModuleList([
             nn.Linear(self.input_size, self.hidden_size),
@@ -194,7 +202,23 @@ class DynamicNeuralChild(nn.Module):
         
     def get_emotional_state(self) -> dict:
         """Get the current emotional state"""
-        return self.emotional_system.get_state()
+        try:
+            state = self.emotional_system.get_state()
+            if not state:
+                # Fallback to basic emotional state if emotional system fails
+                return {
+                    'joy': float(self.emotional_state[0]),
+                    'trust': float(self.emotional_state[1]),
+                    'fear': float(self.emotional_state[2]),
+                    'surprise': float(self.emotional_state[3])
+                }
+            return state
+        except Exception as e:
+            print(f"Error getting emotional state: {str(e)}")
+            return {
+                'state': 'NEUTRAL',
+                'confidence': 1.0
+            }
         
     def get_development_stage(self) -> str:
         """Get the current developmental stage based on age"""
