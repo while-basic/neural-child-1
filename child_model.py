@@ -117,7 +117,12 @@ class DynamicNeuralChild(nn.Module):
         # Initialize core systems
         self.sensory = SensoryExperience(device=self.device)
         self.emotional_system = EmotionalRegulation(emotion_dim=4, context_window=5, memory_dim=32)
-        self.memory = DifferentiableMemory(memory_size=1024, embedding_dim=768, device=self.device)
+        self.memory = DifferentiableMemory(
+            embedding_dim=768,
+            short_term_capacity=1000,
+            long_term_capacity=50000,
+            max_experiences=10000
+        )
         self.theory_of_mind = TheoryOfMind()
         self.attachment = AttachmentSystem()
         self.defense_mechanisms = DefenseMechanisms()
