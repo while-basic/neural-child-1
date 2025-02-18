@@ -5,6 +5,7 @@ import time
 from emotional_regulation import EmotionalRegulation
 from memory_module import DifferentiableMemory
 from psychological_components import TheoryOfMind, AttachmentSystem, DefenseMechanisms
+from typing import Dict
 
 class SensoryExperience:
     def __init__(self, device='cuda'):
@@ -101,234 +102,139 @@ class CognitiveBiases:
         return biased_evidence
 
 class DynamicNeuralChild(nn.Module):
-    def __init__(self, base_dim=128):
+    def __init__(self, device='cuda', hidden_size: int = 256):
         super().__init__()
-        self.base_dim = base_dim
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
+        self.hidden_size = hidden_size  # Add hidden size parameter
+        self.input_size = 768
+        self.output_size = 4  # joy, trust, fear, surprise
         
-        # Initialize core components
-        self.sensory = SensoryExperience(self.device)
-        self.drives = CoreDrives(self.device)
+        # Initialize age (starting at early elementary school age)
+        self.age = 7.0  # Starting age in years
+        self.birth_time = time.time()  # Record birth time for age calculation
+        self.aging_rate = 1.0  # Years per real second - can be adjusted
         
-        # Initialize psychological components
-        self.theory_of_mind = TheoryOfMind(self.device)
-        self.attachment = AttachmentSystem(self.device)
-        self.defense_mechanisms = DefenseMechanisms(self.device)
+        # Core neural layers
+        self.layers = nn.ModuleList([
+            nn.Linear(self.input_size, self.hidden_size),
+            nn.GELU(),
+            nn.Linear(self.hidden_size, self.hidden_size),
+            nn.GELU(),
+            nn.Linear(self.hidden_size, self.output_size),
+            nn.Tanh()
+        ]).to(self.device)
         
-        # Enhanced emotional system
-        self.emotional_regulation = EmotionalRegulation(
-            emotion_dim=4,
-            context_window=5,
-            memory_dim=32
-        )
-        
-        # Memory systems
-        self.memory = DifferentiableMemory()
-        self.emotional_state = torch.zeros(4, device=self.device)
-        
-        # Projection and embedding layers
-        self.input_projection = nn.Linear(768, base_dim).to(self.device)
-        self.drive_projection = nn.Linear(10, len(self.drives.drives)).to(self.device)
-        self.psychological_projection = nn.Linear(
-            base_dim + 256 + len(self.drives.drives) + 4, 
-            512
+        # Add emotion projection layer
+        self.emotion_projection_layer = nn.Sequential(
+            nn.Linear(4, self.hidden_size),
+            nn.ReLU(),
+            nn.Linear(self.hidden_size, self.input_size)
         ).to(self.device)
         
-        # Core processing layers with psychological integration
-        # FIX: Changed input dimension from (base_dim+256+5+4=393) to base_dim (128)
-        self.core_layers = nn.ModuleList([
-            nn.Linear(base_dim, base_dim),
-            nn.LayerNorm(base_dim),
-            nn.GELU(),
-            nn.Dropout(0.1)
-        ])
+        # Initialize emotional state
+        self.emotional_state = torch.zeros(4, device=self.device)  # [joy, trust, fear, surprise]
         
-        # Update the decision network to match our actual input size (398)
-        self.decision_network = nn.Sequential(
-            nn.Linear(398, 512),  # Changed from 393 to 398 to match our input
-            nn.LayerNorm(512),
-            nn.GELU(),
-            nn.Dropout(0.1),
-            nn.Linear(512, base_dim)
-        ).to(self.device)
+    def forward(self, x):
+        """Forward pass for neural network"""
+        for layer in self.layers:
+            x = layer(x)
+        return x
         
-        # Cognitive systems
-        self.cognitive_biases = CognitiveBiases()
-        self.current_beliefs = torch.zeros(base_dim, device=self.device)
+    def update_emotions(self, mother_vector: torch.Tensor) -> Dict[str, float]:
+        """Update emotional state based on mother's input"""
+        # Ensure mother_vector is on the correct device
+        mother_vector = mother_vector.to(self.device)
         
-        # Growth and plasticity parameters
-        self.growth_rate = 1.2
-        self.current_dim = base_dim
+        # Calculate emotional update
+        delta = mother_vector - self.emotional_state
+        self.emotional_state += 0.3 * delta + 0.1 * torch.randn_like(delta)
+        self.emotional_state = torch.clamp(self.emotional_state, 0, 1)
         
-        # Attribute to store last attachment trust for loss computation
-        self.last_attachment_trust = torch.tensor(0.5, device=self.device)
-        
-        # Move everything to device
-        self.to(self.device)
-
-    def update_emotions(self, mother_vector):
-        attachment_state = self.attachment(mother_vector)
-        attachment_influence = attachment_state['trust_level']
-        regulation_result = self.emotional_regulation.regulate(
-            self.emotional_state,
-            mother_vector
-        )
-        regulated_emotion = regulation_result['emotional_state'] * attachment_influence
-        anxiety_level = regulated_emotion[2]  # Fear component
-        defense_response = self.defense_mechanisms(mother_vector, anxiety_level)
-        if defense_response['active_defense'] is not None:
-            regulated_emotion = regulated_emotion * (1 - defense_response['defense_strength'])
-        self.emotional_state = regulated_emotion
-        self.memory.record_experience(
-            mother_vector,
-            self.emotional_state.unsqueeze(0),
-            regulation_result['context_influence'].mean().item(),
-            time.time(),
-            self.emotional_state
-        )
-        trauma_info = regulation_result.get('trauma_info', {})
-        if trauma_info.get('is_traumatic', False):
-            print(f"⚠️ Trauma detected! Intensity: {trauma_info.get('intensity', 0):.2f}")
-            self._process_trauma(trauma_info)
+        # Return current emotional state as dict
         return {
-            'regulation_result': regulation_result,
-            'attachment_state': attachment_state,
-            'defense_response': defense_response
+            'joy': self.emotional_state[0].item(),
+            'trust': self.emotional_state[1].item(),
+            'fear': self.emotional_state[2].item(),
+            'surprise': self.emotional_state[3].item(),
+            'trust_level': self.emotional_state[1].item()  # Using trust as trust_level
         }
         
-    def _process_trauma(self, trauma_info):
-        self.defense_mechanisms.anxiety_threshold.data *= 0.95
-        self.attachment.update_attachment(0.3)
-        self.memory.replay_consolidation(
-            batch_size=64,
-            emotional_state=self.emotional_state  
-        )
-
-    def express_feeling(self):
-        baseline = torch.zeros_like(self.emotional_state)
-        deviation = self.emotional_state - baseline
-        if torch.norm(deviation) < 0.2:
-            return "[CALM]"
-        joy, trust, fear, surprise = self.emotional_state.tolist()
-        feelings = []
-        attachment_state = self.attachment.attachment_styles.tolist()
-        defense_active = self.defense_mechanisms(
-            self.emotional_state.unsqueeze(0), 
-            torch.tensor(fear, device=self.device)
-        )['active_defense']
-        if joy >= 0.8 and attachment_state[0] > 0.5:
-            feelings.append("HAPPY" * min(int(joy * 3), 3))
-        elif joy >= 0.6:
-            feelings.append("content")
-        if trust >= 0.8:
-            feelings.append("affectionate")
-        elif trust >= 0.6:
-            feelings.append("warm")
-        if fear >= 0.7 and not defense_active:
-            feelings.append("terrified")
-        elif fear >= 0.5:
-            feelings.append("anxious")
-        if surprise >= 0.7:
-            feelings.append("startled")
-        elif surprise >= 0.5:
-            feelings.append("curious")
-        if not feelings:
-            if torch.all(self.emotional_state < 0.3):
-                feelings.append("tired")
-            else:
-                feelings.append("neutral")
-        return "[" + " & ".join(feelings).upper() + "]"
-
-    def grow_layer(self):
-        new_dim = int(self.current_dim * self.growth_rate)
-        # FIX: Change the input dimension to self.current_dim rather than (self.current_dim + 256 + len(self.drives.drives))
-        self.core_layers.extend([
-            nn.Linear(self.current_dim, new_dim),
-            nn.LayerNorm(new_dim),
-            nn.GELU(),
-            nn.Linear(new_dim, new_dim)
-        ])
-        self.current_dim = new_dim
-        for param in self.parameters():
-            try:
-                parametrize.register_parametrization(
-                    param, 'plasticity', 
-                    nn.Identity()
-                )
-            except Exception:
-                pass
-
-    def _reparametrize_weights(self):
-        for param in self.parameters():
-            parametrize.register_parametrization(
-                param, 'plasticity', 
-                nn.utils.parametrization.L0Parametrization(param.size(0))
-            )
-
-    def forward(self, x):
-        # Ensure input has batch dimension
-        if x.dim() == 2:
-            batch_size = x.size(0)
+    def express_feeling(self) -> str:
+        """Express current emotional state as text"""
+        emotions = self.emotional_state.tolist()
+        dominant_emotion = max(enumerate(emotions), key=lambda x: x[1])[0]
+        
+        if dominant_emotion == 0:
+            return "HAPPY"
+        elif dominant_emotion == 1:
+            return "TRUSTING"
+        elif dominant_emotion == 2:
+            return "FEARFUL"
         else:
-            x = x.unsqueeze(0)  # Add batch dimension if it's missing
-            batch_size = 1
+            return "SURPRISED"
         
-        # Project input
-        x = self.input_projection(x)
+    def process_interaction(self, message: str) -> str:
+        """Process an interaction and generate a response"""
+        # Convert message to embeddings (simplified)
+        stimulus = torch.randn(1, 512, device=self.device)  # Placeholder for actual embedding
         
-        # Process sensory input and ensure batch dimension
-        sensory_output = self.sensory.process_input(x)
+        # Process through sensory system
+        sensory_output = self.sensory.process_input(stimulus)
         
-        # Get drive vector and ensure batch dimension
-        drive_vector = self.drives.get_motivation_vector().unsqueeze(0).expand(batch_size, -1)
+        # Update emotional state
+        emotional_state = self.emotional_system.update(sensory_output)
         
-        # Prepare emotional state with batch dimension
-        emotional_state = self.emotional_state.unsqueeze(0).expand(batch_size, -1)
+        # Store in memory
+        self.memory.store(message, emotional_state)
         
-        # # For debugging
-        # print(f"x shape: {x.shape}")
-        # print(f"sensory_output shape: {sensory_output.shape}")
-        # print(f"drive_vector shape: {drive_vector.shape}")
-        # print(f"emotional_state shape: {emotional_state.shape}")
+        # Generate response using theory of mind
+        response = self.theory_of_mind.generate_response(message, emotional_state)
         
-        # Verify all tensors have correct batch dimension
-        assert x.size(0) == batch_size
-        assert sensory_output.size(0) == batch_size
-        assert drive_vector.size(0) == batch_size
-        assert emotional_state.size(0) == batch_size
+        return response
         
-        # Now all tensors should have matching dimensions for concatenation
-        combined_input = torch.cat([x, sensory_output, drive_vector, emotional_state], dim=-1)
-        # print(f"combined_input shape: {combined_input.shape}")
+    def get_emotional_state(self) -> dict:
+        """Get the current emotional state"""
+        return self.emotional_system.get_state()
         
-        # Process through theory of mind and attachment
-        theory_of_mind_output = self.theory_of_mind(combined_input)
-        attachment_output = self.attachment(self.emotional_state)
-        self.last_attachment_trust = attachment_output['trust_level']
-        
-        # Process through decision network
-        output = self.decision_network(combined_input)
-        output = self.cognitive_biases.apply_confirmation_bias(self.current_beliefs, output)
-        
-        # Process through core layers
-        for layer in self.core_layers:
-            output = layer(output)
-            if isinstance(layer, nn.Linear) and self.training:
-                curiosity_level = self.drives.drives['curiosity'].item() * attachment_output['trust_level'].item()
-                mask = torch.rand_like(output) > (0.1 / curiosity_level)
-                output = output * mask
-        
-        if self.training:
-            anxiety_level = emotional_state[0, 2]
-            defense_response = self.defense_mechanisms(combined_input, anxiety_level)
-            if defense_response['active_defense'] is not None:
-                output = output * (1 - defense_response['defense_strength'])
-        
-        return output
+    def get_development_stage(self) -> str:
+        """Get the current developmental stage based on age"""
+        if self.age >= 11:
+            return "EARLY_ADOLESCENCE"
+        elif self.age >= 9:
+            return "LATE_ELEMENTARY"
+        elif self.age >= 8:
+            return "MIDDLE_ELEMENTARY"
+        else:
+            return "EARLY_ELEMENTARY"
+            
+    def get_age(self) -> float:
+        """Get the current age in years, calculated from birth time"""
+        elapsed_time = time.time() - self.birth_time
+        current_age = self.age + (elapsed_time * self.aging_rate / (365 * 24 * 60 * 60))  # Convert seconds to years
+        return current_age
 
-    def update_drives_and_senses(self, feedback, satisfaction):
-        self.drives.update_drives(feedback, satisfaction)
-        self.sensory.update_sensitivity(feedback)
-        self.theory_of_mind.update_relationship_model(feedback, satisfaction)
-        self.attachment.update_attachment(satisfaction)
-        self.defense_mechanisms.update_threshold(1 - satisfaction)
+    def add_layer(self) -> None:
+        """Add a new layer to the neural network"""
+        # Find position to insert new layer (before last linear layer)
+        insert_pos = len(self.layers) - 2
+        
+        # Create new layer with same hidden size
+        new_layer = nn.Sequential(
+            nn.Linear(self.hidden_size, self.hidden_size),
+            nn.GELU()
+        ).to(self.device)
+        
+        # Insert the new layer
+        self.layers.insert(insert_pos, new_layer)
+        
+    def modify_layer(self, layer_idx: int) -> None:
+        """Modify an existing layer's architecture"""
+        if isinstance(self.layers[layer_idx], nn.Linear):
+            # Randomly adjust the layer size while maintaining input/output dimensions
+            current_layer = self.layers[layer_idx]
+            in_features = current_layer.in_features
+            out_features = current_layer.out_features
+            
+            # Create new layer with same dimensions but new initialization
+            new_layer = nn.Linear(in_features, out_features).to(self.device)
+            self.layers[layer_idx] = new_layer

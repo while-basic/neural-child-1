@@ -25,7 +25,8 @@ class MemoryCluster:
 class DifferentiableMemory(nn.Module):
     def __init__(self, embedding_dim: int = 768, 
                 short_term_capacity: int = 1000,
-                long_term_capacity: int = 50000):
+                long_term_capacity: int = 50000,
+                max_experiences=10000):
         super().__init__()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
@@ -60,6 +61,9 @@ class DifferentiableMemory(nn.Module):
         self.forgetting_rate = nn.Parameter(torch.tensor(0.1, device=self.device))
         self.consolidation_threshold = nn.Parameter(torch.tensor(0.7, device=self.device))
         self.emotional_importance = nn.Parameter(torch.ones(4, device=self.device))
+        
+        self.experiences = deque(maxlen=max_experiences)
+        self.max_experiences = max_experiences
         
         self.to(self.device)  # Move the whole module to the specified device
         
@@ -101,33 +105,31 @@ class DifferentiableMemory(nn.Module):
                 new_cluster.add_memory((encoded_memory, importance))
                 self.long_term_clusters.append(new_cluster)
 
-    def record_experience(self, input_vec: torch.Tensor, internal_state: torch.Tensor, 
-                        reward: float, timestamp: float, emotional_state: torch.Tensor):
-        # Move all tensors to the same device
-        input_vec = input_vec.to(self.device)
-        internal_state = internal_state.to(self.device)
-        reward_tensor = torch.tensor([reward], device=self.device)
-        timestamp_tensor = torch.tensor([timestamp], device=self.device)
-        emotional_state = emotional_state.to(self.device)
+    def record_experience(self, input_data, internal_state, reward, timestamp, emotional_state):
+        """Record an experience in memory"""
+        experience = {
+            'input': input_data,
+            'internal_state': internal_state,
+            'reward': reward,
+            'timestamp': timestamp,
+            'emotional_state': emotional_state
+        }
+        self.experiences.append(experience)
         
-        # Create memory entry
-        memory_entry = torch.cat([
-            input_vec.squeeze(0),
-            internal_state.squeeze(0),
-            reward_tensor,
-            timestamp_tensor,
-            emotional_state if emotional_state.dim() == 1 else emotional_state.squeeze(0)
-        ])
+    def get_important_experiences(self, k=10):
+        """Retrieve k most important experiences based on reward"""
+        if not self.experiences:
+            return []
+            
+        # Sort experiences by reward and recency
+        sorted_experiences = sorted(
+            self.experiences,
+            key=lambda x: (x['reward'], -abs(time.time() - x['timestamp'])),
+            reverse=True
+        )
         
-        self.short_term_memory.append(memory_entry)
-        importance = self.compute_memory_importance(memory_entry, emotional_state)
+        return sorted_experiences[:k]
         
-        if importance > 0.8:
-            self.working_memory.append(memory_entry)
-        
-        self.replay_optimizer.add_experience(memory_entry)
-        return importance
-    
     def forget_memories(self):
         # Create forget mask on the same device as forgetting_rate
         forget_mask = (torch.rand(len(self.short_term_memory), device=self.device) > 
@@ -148,23 +150,16 @@ class DifferentiableMemory(nn.Module):
         for cluster in clusters_to_remove:
             self.long_term_clusters.remove(cluster)
     
-    def replay_consolidation(self, batch_size=32, emotional_state=None):
-        samples, indices = self.replay_optimizer.sample_batch(batch_size)
-        losses = []
-        with torch.no_grad():
-            for sample in samples:
-                encoded = self.encoder(sample[:768])
-                # Use the internal state part (indices 768:896, which is 128-dimensional)
-                target = self.consolidation_net(sample[768:896])
-                loss = nn.MSELoss()(encoded, target)
-                losses.append(loss.item())
-                if emotional_state is not None:
-                    importance = self.compute_memory_importance(sample, emotional_state)
-                    if importance > self.consolidation_threshold:
-                        self.consolidate_memory(sample, importance)
-        self.replay_optimizer.update_weights(indices, torch.tensor(losses, device=self.device))
-        self.forget_memories()
-        return torch.tensor(losses).mean().item()
+    def replay_consolidation(self, batch_size=32):
+        """Consolidate memories through replay"""
+        if len(self.experiences) < batch_size:
+            return []
+            
+        # Sample random batch of experiences
+        indices = torch.randperm(len(self.experiences))[:batch_size]
+        batch = [self.experiences[i] for i in indices]
+        
+        return batch
     
     def retrieve_memories(self, cue: torch.Tensor, top_k: int = 5) -> List[torch.Tensor]:
         if not self.long_term_clusters:

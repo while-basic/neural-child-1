@@ -1,0 +1,111 @@
+# Cursor IDE Configuration Rules for Neural Child Project
+
+# Rules
+- When creating new files, always include a header with the file name, date, and a brief description of the file and what it does.
+- Always write comments and docstrings in a professional and engaging way.
+- Always update the CHANGELOG.md file with the latest changes.
+- Always update the README.md file with the latest changes.
+- Make suggestions for improvements and optimizations.
+- Your suggestion should be sci-fi and futuristic.
+- Always include detailed error handling for LLM API interactions.
+- Add debug logging for LLM requests and responses.
+- Ensure compatibility with LM Studio's API format.
+
+# User Identification
+user_title = "Dr. Celaya"
+project_name = "Neural Child + Meta-Learning"
+formality_level = "high"
+
+# Code Style Rules
+[style]
+max_line_length = 100
+indent_style = "space"
+indent_size = 4
+end_of_line = "lf"
+charset = "utf-8"
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+# Python-specific Rules
+[python]
+docstring_style = "google"
+type_hints = "required"
+max_complexity = 10
+require_explicit_returns = true
+enforce_error_handling = true
+
+# Neural Network Rules
+[neural_network]
+require_shape_validation = true
+enforce_cuda_compatibility = true
+require_memory_management = true
+enforce_gradient_checks = true
+
+# Documentation Rules
+[documentation]
+require_docstrings = true
+require_type_hints = true
+changelog_format = "keepachangelog"
+require_error_documentation = true
+
+# Testing Rules
+[testing]
+require_unit_tests = true
+minimum_coverage = 85
+require_integration_tests = true
+enforce_mock_usage = true
+
+# Security Rules
+[security]
+prevent_hardcoded_credentials = true
+enforce_input_validation = true
+require_error_handling = true
+enforce_secure_connections = true
+
+# IDE Behavior
+[ide]
+# Personalized greeting for Dr. Celaya
+greeting = "Welcome back, Dr. Celaya. Neural Child development environment initialized."
+auto_save = true
+format_on_save = true
+show_line_numbers = true
+highlight_current_line = true
+enable_code_folding = true
+
+# Error Handling
+[error_handling]
+detailed_stack_traces = true
+log_all_exceptions = true
+show_debug_info = true
+enforce_try_catch = true
+
+# Performance Monitoring
+[performance]
+enable_memory_tracking = true
+enable_cuda_profiling = true
+track_tensor_operations = true
+monitor_gpu_usage = true
+
+# Version Control
+[version_control]
+require_conventional_commits = true
+enforce_branch_naming = true
+require_changelog_updates = true
+prevent_direct_main_commits = true
+
+# Collaboration
+[collaboration]
+require_code_reviews = true
+enforce_documentation_updates = true
+require_test_coverage = true
+prevent_merge_conflicts = true
+
+# LLM Integration Rules
+[llm_integration]
+require_debug_logging = true
+enforce_timeout_handling = true
+require_error_documentation = true
+max_retries = 3
+timeout_seconds = 60
+verify_api_compatibility = true
+log_request_response = true 

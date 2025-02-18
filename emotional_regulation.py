@@ -84,6 +84,12 @@ class EmotionalRegulation(nn.Module):
         self.trauma_threshold = 1.0
         self.resilience = 1.0
         
+        # Set device first
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
+        # Initialize baseline on the correct device
+        self.baseline = torch.zeros(emotion_dim, device=self.device)
+        
         self.context_processor = nn.LSTM(
             input_size=emotion_dim,
             hidden_size=emotion_dim * 2,
@@ -107,8 +113,8 @@ class EmotionalRegulation(nn.Module):
         )
         
         self.emotional_history = deque(maxlen=context_window)
-        self.baseline = torch.zeros(emotion_dim, device='cuda')
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
+        # Move model to device at the end
         self.to(self.device)
         
     def update_baseline(self):

@@ -1,25 +1,31 @@
 # text_embed.py
 
+import os
 import requests
-from typing import List, Dict, Union, Optional
+import torch
+from typing import Optional, List, Dict, Any
 
-def get_embeddings(text_input: Union[str, List[str]], 
-                  model: str = "text-embedding-nomic-embed-text-v1.5",
-                  server_url: str = "http://0.0.0.0:1234/v1/embeddings") -> List[Dict]: #Using a local Embedding model in LM Studio for embedding purposes.
+# Server configuration
+EMBEDDING_SERVER = 'localhost'  # Use localhost directly
+EMBEDDING_PORT = '1234'
+EMBEDDING_URL = f"http://{EMBEDDING_SERVER}:{EMBEDDING_PORT}/v1/embeddings"
+
+def get_embeddings(text: str) -> Optional[List[Dict[str, Any]]]:
+    """Get embeddings with proper error handling"""
     try:
-        payload_input = [text_input] if isinstance(text_input, str) else text_input
-        
         response = requests.post(
-            server_url,
-            json={"model": model, "input": payload_input},
-            timeout=30
-        ).json()
-        
-        return response.get("data", [])
-        
-    except requests.exceptions.RequestException as e:
-        print(f"Oops! Embedding server isn't playing nice: {e}")
-        return []
+            EMBEDDING_URL,
+            json={"input": text},
+            timeout=10  # Add timeout
+        )
+        response.raise_for_status()  # Raise error for bad status
+        return response.json()
+    except requests.exceptions.ConnectionError as e:
+        print(f"Connection error to embedding server at {EMBEDDING_URL}: {str(e)}")
+        return None
+    except requests.exceptions.Timeout:
+        print(f"Timeout connecting to embedding server at {EMBEDDING_URL}")
+        return None
     except Exception as e:
-        print(f"Something went sideways: {e}")
-        return []
+        print(f"Error getting embeddings: {str(e)}")
+        return None
