@@ -6,10 +6,81 @@
 - Always update the CHANGELOG.md file with the latest changes.
 - Always update the README.md file with the latest changes.
 - Make suggestions for improvements and optimizations.
-- Your suggestion should be sci-fi and futuristic.
 - Always include detailed error handling for LLM API interactions.
 - Add debug logging for LLM requests and responses.
 - Ensure compatibility with LM Studio's API format.
+
+# Ollama Integration Rules
+[ollama]
+# API Configuration
+base_url = "http://localhost:11434"
+max_retries = 5
+timeout_seconds = 60
+backoff_factor = 1.5
+stream_mode = false
+
+# Model Settings
+default_model = "deepseek-r1"
+fallback_model = "neural-chat"
+temperature_range = [0.1, 1.0]
+max_tokens = 500
+
+# Error Handling
+require_health_check = true
+require_fallback_responses = true
+log_all_prompts = true
+log_all_responses = true
+enable_response_validation = true
+
+# Performance
+enable_response_caching = true
+cache_duration_minutes = 30
+enable_batch_processing = true
+max_concurrent_requests = 3
+
+# Sci-Fi Development Guidelines
+[sci_fi]
+# Theme Categories
+themes = [
+    "quantum_computing",
+    "neural_interfaces",
+    "consciousness_transfer",
+    "time_manipulation",
+    "reality_augmentation",
+    "ai_evolution",
+    "dimensional_physics",
+    "biotechnology",
+    "space_time_mechanics",
+    "energy_manipulation"
+]
+
+# Technology Elements
+required_elements = [
+    "advanced_ai",
+    "quantum_systems",
+    "neural_networks",
+    "holographic_interfaces",
+    "energy_fields",
+    "consciousness_mapping",
+    "temporal_mechanics",
+    "dimensional_gates"
+]
+
+# Narrative Components
+narrative_elements = [
+    "technological_discovery",
+    "ethical_dilemmas",
+    "consciousness_exploration",
+    "reality_questioning",
+    "human_machine_interaction",
+    "evolutionary_advancement"
+]
+
+# Code Standards
+require_quantum_ready = true
+enforce_temporal_safety = true
+require_consciousness_handling = true
+enable_dimensional_validation = true
 
 # User Identification
 user_title = "Dr. Celaya"
@@ -40,6 +111,9 @@ require_shape_validation = true
 enforce_cuda_compatibility = true
 require_memory_management = true
 enforce_gradient_checks = true
+enable_quantum_layers = true
+require_consciousness_tracking = true
+enable_temporal_processing = true
 
 # Documentation Rules
 [documentation]
@@ -47,6 +121,8 @@ require_docstrings = true
 require_type_hints = true
 changelog_format = "keepachangelog"
 require_error_documentation = true
+require_sci_fi_concepts = true
+require_quantum_explanations = true
 
 # Testing Rules
 [testing]
@@ -54,6 +130,9 @@ require_unit_tests = true
 minimum_coverage = 85
 require_integration_tests = true
 enforce_mock_usage = true
+require_quantum_tests = true
+require_temporal_tests = true
+require_consciousness_tests = true
 
 # Security Rules
 [security]
@@ -61,16 +140,19 @@ prevent_hardcoded_credentials = true
 enforce_input_validation = true
 require_error_handling = true
 enforce_secure_connections = true
+require_quantum_encryption = true
+enforce_temporal_integrity = true
 
 # IDE Behavior
 [ide]
 # Personalized greeting for Dr. Celaya
-greeting = "Welcome back, Dr. Celaya. Neural Child development environment initialized."
+greeting = "Welcome back, Dr. Celaya. Quantum-Neural development environment initialized."
 auto_save = true
 format_on_save = true
 show_line_numbers = true
 highlight_current_line = true
 enable_code_folding = true
+enable_quantum_visualization = true
 
 # Error Handling
 [error_handling]
@@ -78,6 +160,8 @@ detailed_stack_traces = true
 log_all_exceptions = true
 show_debug_info = true
 enforce_try_catch = true
+handle_quantum_errors = true
+track_temporal_anomalies = true
 
 # Performance Monitoring
 [performance]
@@ -85,6 +169,8 @@ enable_memory_tracking = true
 enable_cuda_profiling = true
 track_tensor_operations = true
 monitor_gpu_usage = true
+track_quantum_efficiency = true
+monitor_temporal_stability = true
 
 # Version Control
 [version_control]
@@ -92,6 +178,7 @@ require_conventional_commits = true
 enforce_branch_naming = true
 require_changelog_updates = true
 prevent_direct_main_commits = true
+track_quantum_changes = true
 
 # Collaboration
 [collaboration]
@@ -99,13 +186,16 @@ require_code_reviews = true
 enforce_documentation_updates = true
 require_test_coverage = true
 prevent_merge_conflicts = true
+require_quantum_validation = true
 
 # LLM Integration Rules
 [llm_integration]
 require_debug_logging = true
 enforce_timeout_handling = true
 require_error_documentation = true
-max_retries = 3
+max_retries = 5
 timeout_seconds = 60
 verify_api_compatibility = true
-log_request_response = true 
+log_request_response = true
+enable_quantum_prompting = true
+track_consciousness_evolution = true 

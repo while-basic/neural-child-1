@@ -12,6 +12,7 @@ from metacognition import MetacognitionSystem
 from self_supervised_trainer import AutonomousTrainer
 from text_embed import get_embeddings
 from meta_learning import MetaLearningSystem, NeuralArchitectureSearch, GeneticOptimizer, create_model_from_architecture
+from chat_interface import NeuralChildInterface
 import numpy as np
 import torch.nn as nn
 from copy import deepcopy
@@ -24,6 +25,7 @@ import random
 from enum import Enum
 import re
 import logging
+from ollama_client import OllamaConfig, OllamaClient
 
 # Configure logging
 logging.basicConfig(
@@ -70,6 +72,26 @@ class MotherLLM:
                 Foster advanced cognitive development, professional growth, and personal autonomy."""
         }
         
+        # Initialize Ollama client with custom configuration
+        self.ollama_config = OllamaConfig(
+            base_url="http://localhost:11434",
+            default_model="mistral",
+            fallback_model="llama2",
+            temperature_range=(0.7, 0.9),  # Higher creativity for motherly responses
+            max_tokens=150,  # Keep responses concise
+            enable_response_caching=True,
+            cache_duration_minutes=30,
+            require_health_check=True
+        )
+        try:
+            self.ollama_client = OllamaClient(self.ollama_config)
+            logger.info("Successfully initialized Ollama client")
+        except ConnectionError as e:
+            logger.error(f"Failed to initialize Ollama client: {str(e)}")
+            logger.info("Please ensure Ollama is running and has required models installed")
+        except Exception as e:
+            logger.error(f"Unexpected error initializing Ollama client: {str(e)}")
+        
         # Initialize memory systems
         self.short_term_memory = []  # Recent interactions
         self.long_term_memory = {    # Core memories and patterns
@@ -103,12 +125,7 @@ class MotherLLM:
             'timestamp': datetime.now()
         }
         
-        # Add LLM configuration
-        self.llm_config = {
-            'timeout': 30,  # 30 second timeout
-            'max_retries': 3,
-            'backoff_factor': 1.5
-        }
+        logger.info("MotherLLM initialized with Ollama integration")
         
     def _store_memory(self, memory_type: str, content: Dict[str, Any], importance: float):
         """Store a new memory with metadata"""
@@ -472,106 +489,84 @@ class MotherLLM:
         expression = random.choice(expressions[emotion['type']])
         return f"{expression} {intensity_word} "
         
-    def respond(self, message: str, context: list = None) -> str:
-        """Generate a response using the appropriate developmental stage prompt and memories"""
+    def respond(self, message: str, context: Optional[List[Dict[str, str]]] = None) -> str:
+        """Generate response using Ollama with proper error handling"""
         try:
-            # Log the incoming message
-            logger.debug(f"Processing message: {message[:50]}...")
+            # Get development stage and appropriate prompt
+            stage = self._determine_stage(context)
+            stage_prompt = self.stage_prompts.get(stage, self.stage_prompts[DevelopmentalStage.EARLY_ELEMENTARY])
             
-            # Analyze emotional content
-            emotional_analysis = self._analyze_emotional_content(message)
-            self.current_emotion = emotional_analysis
-            logger.debug(f"Emotional analysis: {emotional_analysis['type']} (Intensity: {emotional_analysis['intensity']:.2f})")
-            
-            # Store emotional memory if significant
-            if emotional_analysis['intensity'] > 0.5:
-                memory = {
-                    'text': message,
-                    'emotion': emotional_analysis,
-                    'timestamp': datetime.now(),
-                    'importance': 0.8 + emotional_analysis['intensity'] * 0.2
-                }
-                self._store_memory('emotional_memories', memory, memory['importance'])
-                logger.debug("Stored emotional memory with importance: %.2f", memory['importance'])
-            
-            # Extract and store personal information
-            personal_info = self._extract_personal_info(message)
-            if personal_info:
-                self._update_personal_info(personal_info)
-                memory = {
-                    'text': message,
-                    'personal_info': personal_info,
-                    'timestamp': datetime.now()
-                }
-                self._store_memory('personal_info', memory, 0.9)
-            
-            # Get current stage from context
-            current_stage = self._determine_stage(context)
-            stage_prompt = self.stage_prompts.get(current_stage, self.stage_prompts[DevelopmentalStage.EARLY_ELEMENTARY])
-            
-            # Enhance prompt with personal information
+            # Enhance prompt with personal info and emotional context
             enhanced_prompt = self._enhance_prompt_with_personal_info(stage_prompt)
             
-            # Add emotional context
-            emotional_context = f"\nCurrent Emotional State: {self.current_emotion['type']} (Intensity: {self.current_emotion['intensity']:.1f})"
-            enhanced_prompt += emotional_context
+            # Construct full prompt with context
+            full_prompt = f"{enhanced_prompt}\n\nChild's message: {message}\n\nRespond as a caring mother:"
             
-            # Retrieve relevant memories
-            current_context = {
-                'text': message,
-                'developmental_stage': current_stage,
-                'timestamp': datetime.now(),
-                'emotion': self.current_emotion
-            }
-            relevant_memories = self._retrieve_relevant_memories(current_context)
+            # Get quantum metrics before response
+            pre_quantum_metrics = self.ollama_client.get_quantum_metrics()
+            logger.debug(f"Pre-response quantum metrics: {pre_quantum_metrics}")
             
-            # Add memory context
-            memory_context = "\n\nRelevant past interactions and observations:\n"
-            for memory in relevant_memories:
-                memory_context += f"- {memory['content'].get('text', '')}\n"
-                if 'emotion' in memory['content']:
-                    memory_context += f"  (Emotional: {memory['content']['emotion']['type']})\n"
-            
-            # Combine context and current message
-            full_context = context or []
-            full_context.append({"role": "user", "content": message})
-            
-            # Insert system prompt as first message
-            full_context.insert(0, {"role": "system", "content": enhanced_prompt + memory_context})
-            
-            # Generate response
-            logger.debug("Sending request to LLM API...")
-            response = chat_completion(
-                messages=full_context,
-                temperature=0.7
-            )
-            logger.debug("Received response from LLM API")
-            
-            # Add emotional expression to response
-            emotional_expression = self._generate_emotional_response(self.current_emotion)
-            response = emotional_expression + response
-            
-            # Store the interaction in memory
-            interaction_memory = {
-                'text': message,
-                'response': response,
-                'developmental_stage': current_stage,
-                'emotion': self.current_emotion,
-                'timestamp': datetime.now()
-            }
-            importance = self._calculate_memory_importance(interaction_memory)
-            self._store_memory('interaction', interaction_memory, importance)
-            
-            return response
-            
-        except TimeoutError:
-            logger.warning("Response generation timed out")
-            return "*takes a thoughtful pause* I need a moment to process that properly. Could you please repeat your message?"
-            
+            # Generate response using Ollama
+            try:
+                response_data = self.ollama_client.generate_response(
+                    prompt=full_prompt,
+                    temperature=0.8  # Slightly higher for more nurturing responses
+                )
+                response = response_data['response']
+                
+                # Get quantum metrics after response
+                post_quantum_metrics = self.ollama_client.get_quantum_metrics()
+                logger.debug(f"Post-response quantum metrics: {post_quantum_metrics}")
+                
+                # Update emotional state based on response
+                self._update_emotional_state(message, response)
+                
+                # Store interaction in memory
+                self._store_memory({
+                    'text': message,
+                    'response': response,
+                    'quantum_metrics': {
+                        'pre': pre_quantum_metrics,
+                        'post': post_quantum_metrics
+                    },
+                    'timestamp': datetime.now()
+                }, importance=0.8)
+                
+                return response
+                
+            except ConnectionError:
+                logger.error("Could not connect to Ollama service")
+                return "*Mother is temporarily unavailable. Please ensure Ollama is running.*"
+                
+            except Exception as e:
+                logger.error(f"Error generating response: {str(e)}")
+                return "*Mother is processing your message carefully...*"
+                
         except Exception as e:
-            logger.error(f"Error in response generation: {str(e)}", exc_info=True)
-            return "*apologetically* I'm having trouble processing that right now. Could we try again?"
+            logger.error(f"Critical error in respond method: {str(e)}")
+            return "*Mother needs a moment to think...*"
         
+    def _update_emotional_state(self, message: str, response: str) -> None:
+        """Update emotional state based on interaction"""
+        # Analyze emotional content
+        emotional_analysis = self._analyze_emotional_content(message)
+        
+        # Update current emotion
+        self.current_emotion = {
+            'type': emotional_analysis['type'],
+            'intensity': emotional_analysis['intensity'],
+            'cause': message,
+            'timestamp': datetime.now()
+        }
+        
+        # Get quantum emotional influence
+        quantum_metrics = self.ollama_client.get_quantum_metrics()
+        
+        # Adjust emotional intensity based on quantum coherence
+        self.current_emotion['intensity'] *= quantum_metrics['coherence']
+        
+        logger.debug(f"Updated emotional state: {self.current_emotion}")
+
     def _determine_stage(self, context: list) -> DevelopmentalStage:
         """Determine the appropriate developmental stage based on interaction context"""
         if not context:
@@ -654,7 +649,60 @@ class DigitalChild:
             'adaptation_history': [],
             'mutation_events': []
         }
+
+    def get_development_stage(self) -> str:
+        """Get the current developmental stage based on age and metrics"""
+        age = self.get_age()
         
+        # Get additional metrics for more accurate stage determination
+        emotional_maturity = np.mean([
+            float(self.emotional_state[0]),  # Joy
+            float(self.emotional_state[1]),  # Trust
+            1.0 - float(self.emotional_state[2]),  # Inverse of Fear
+            float(self.emotional_state[3])   # Surprise (curiosity)
+        ])
+        
+        # Get quantum coherence as a measure of stability
+        quantum_coherence = self.quantum_emotional_state['coherence_factor']
+        
+        # Get neural complexity
+        neural_complexity = self.neural_evolution['architecture_complexity']
+        
+        # Calculate overall development score
+        development_score = (
+            0.4 * age +  # Age is the primary factor
+            0.3 * emotional_maturity +  # Emotional development
+            0.2 * quantum_coherence +  # Stability
+            0.1 * neural_complexity    # Neural development
+        )
+        
+        # Map development score to stages
+        if development_score < 8.0:
+            return "EARLY_ELEMENTARY"
+        elif development_score < 9.0:
+            return "MIDDLE_ELEMENTARY"
+        elif development_score < 11.0:
+            return "LATE_ELEMENTARY"
+        elif development_score < 13.0:
+            return "EARLY_ADOLESCENCE"
+        elif development_score < 15.0:
+            return "MIDDLE_ADOLESCENCE"
+        elif development_score < 17.0:
+            return "LATE_ADOLESCENCE"
+        elif development_score < 19.0:
+            return "YOUNG_ADULT"
+        else:
+            return "EARLY_ADULT"
+
+    def get_age(self) -> float:
+        """Get the current age in years"""
+        age_in_days = (datetime.now() - self.birth_date).days
+        return age_in_days / 365.0  # Convert days to years
+
+    def age(self) -> int:
+        """Get age in months (legacy method)"""
+        return (datetime.now() - self.birth_date).days // 30  # months
+
     def update_emotions(self, mother_vector):
         """Update emotional state without recursive calls"""
         if isinstance(mother_vector, dict):
@@ -778,9 +826,6 @@ class DigitalChild:
                 loss = nn.MSELoss()(new_emb, old_emb)
                 loss.backward()
                 optimizer.step()
-
-    def age(self):
-        return (datetime.now() - self.birth_date).days // 30  # months
 
     def _process_quantum_emotions(self, stimulus_vector):
         """Process emotions using quantum-inspired algorithms"""
