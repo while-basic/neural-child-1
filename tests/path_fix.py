@@ -10,8 +10,11 @@ Project: Neural Child + Meta-Learning
 
 import os
 import sys
+import logging
 from pathlib import Path
-from typing import Tuple, List
+from typing import Tuple, List, Optional
+
+logger = logging.getLogger(__name__)
 
 def find_project_root() -> Path:
     """
@@ -53,39 +56,46 @@ def verify_project_structure(root: Path) -> Tuple[bool, List[str]]:
             
     return len(missing) == 0, missing
 
-def setup_test_paths() -> Tuple[Path, bool]:
+def setup_test_paths() -> Optional[str]:
     """
-    Set up Python path for test execution.
-    Returns the project root and success status.
+    Set up Python path for test modules.
+    
+    Adds the project root directory to Python path to allow importing from the main project.
+    
+    Returns:
+        str: Path to project root if successful, None otherwise
+    
+    Raises:
+        ImportError: If unable to set up paths correctly
     """
-    # Find project root
-    project_root = find_project_root()
-    
-    # Verify project structure
-    is_valid, missing = verify_project_structure(project_root)
-    
-    # Add to Python path if not already there
-    project_root_str = str(project_root.absolute())
-    if project_root_str not in sys.path:
-        sys.path.insert(0, project_root_str)
+    try:
+        # Get the directory containing this file
+        current_dir = os.path.dirname(os.path.abspath(__file__))
         
-    # Also add the tests directory
-    tests_dir = project_root / 'tests'
-    tests_dir_str = str(tests_dir.absolute())
-    if tests_dir_str not in sys.path:
-        sys.path.insert(0, tests_dir_str)
+        # Get project root (parent of tests directory)
+        project_root = os.path.dirname(current_dir)
         
-    return project_root, is_valid
+        # Add to Python path if not already there
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+            logger.debug(f"Added project root to Python path: {project_root}")
+        
+        return project_root
+        
+    except Exception as e:
+        logger.error(f"Failed to set up test paths: {str(e)}")
+        logger.error(f"Current Python path: {sys.path}")
+        raise ImportError(f"Unable to set up test paths: {str(e)}")
 
-# Execute path setup when module is imported
-PROJECT_ROOT, IS_VALID = setup_test_paths()
+# Set up paths when module is imported
+project_root = setup_test_paths()
 
 # Print status
-if not IS_VALID:
-    print(f"⚠️  Warning: Project structure may be incomplete at {PROJECT_ROOT}")
-    print("Please ensure you're running tests from the project root directory")
+if project_root:
+    print(f"✓ Project root verified: {project_root}")
 else:
-    print(f"✓ Project root verified: {PROJECT_ROOT}")
+    print("⚠️  Warning: Project structure may be incomplete")
+    print("Please ensure you're running tests from the project root directory")
 
 # Export for use in other modules
-__all__ = ['PROJECT_ROOT', 'IS_VALID', 'setup_test_paths', 'verify_project_structure'] 
+__all__ = ['project_root', 'verify_project_structure'] 

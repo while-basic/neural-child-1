@@ -22,6 +22,21 @@ from urllib3.util.retry import Retry
 import webbrowser
 import random
 from enum import Enum
+import re
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),  # Output to console
+        logging.FileHandler('neural_child.log')  # Output to file
+    ]
+)
+
+# Create logger for this module
+logger = logging.getLogger(__name__)
 
 class DevelopmentalStage(Enum):
     EARLY_ELEMENTARY = "early_elementary"
@@ -86,6 +101,13 @@ class MotherLLM:
             'intensity': 0.5,
             'cause': None,
             'timestamp': datetime.now()
+        }
+        
+        # Add LLM configuration
+        self.llm_config = {
+            'timeout': 30,  # 30 second timeout
+            'max_retries': 3,
+            'backoff_factor': 1.5
         }
         
     def _store_memory(self, memory_type: str, content: Dict[str, Any], importance: float):
@@ -178,50 +200,110 @@ class MotherLLM:
         return min(importance, 1.0)
     
     def _retrieve_relevant_memories(self, current_context: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Retrieve memories relevant to the current context"""
+        """
+        Retrieve memories relevant to the current context.
+        
+        Args:
+            current_context (Dict[str, Any]): Current context including text and emotional state
+            
+        Returns:
+            List[Dict[str, Any]]: List of relevant memories
+        """
         relevant_memories = []
+        search_text = current_context.get('text', '').lower()
         
         # Get recent short-term memories
-        relevant_memories.extend(self.short_term_memory[-5:])
+        for memory in reversed(self.short_term_memory[-10:]):  # Check last 10 memories
+            memory_text = str(memory['content'].get('text', '')).lower()
+            if search_text in memory_text or memory_text in search_text:
+                relevant_memories.append(memory)
         
-        # Get relevant long-term memories
+        # Search through long-term memories
         for category in self.long_term_memory:
             category_memories = self.long_term_memory[category]
-            # Sort by importance and recency
-            category_memories.sort(key=lambda x: (x['importance'], x['timestamp']), reverse=True)
-            # Add top 2 memories from each category
-            relevant_memories.extend(category_memories[:2])
-            
-        return relevant_memories
+            for memory in category_memories:
+                memory_text = str(memory['content'].get('text', '')).lower()
+                memory_type = memory.get('type', '')
+                
+                # Check for text match
+                if search_text in memory_text or memory_text in search_text:
+                    relevant_memories.append(memory)
+                    continue
+                    
+                # Check for emotional state match if present
+                if ('emotional_state' in current_context and 
+                    'emotional_state' in memory['content']):
+                    current_state = current_context['emotional_state']
+                    memory_state = memory['content']['emotional_state']
+                    
+                    if isinstance(current_state, torch.Tensor) and isinstance(memory_state, torch.Tensor):
+                        if torch.allclose(current_state, memory_state, atol=0.3):
+                            relevant_memories.append(memory)
+                            continue
+                            
+                # Check for type match
+                if memory_type and memory_type == current_context.get('type'):
+                    relevant_memories.append(memory)
+        
+        # Sort by importance and recency
+        relevant_memories.sort(
+            key=lambda x: (x['importance'], x['timestamp']),
+            reverse=True
+        )
+        
+        # Return top 10 most relevant memories
+        return relevant_memories[:10]
         
     def _extract_personal_info(self, text: str) -> Dict[str, Any]:
         """Extract personal information from text"""
         info = {}
         text = text.lower()
         
-        # Name detection
-        name_indicators = ["my name is", "i'm", "i am", "call me"]
-        for indicator in name_indicators:
-            if indicator in text:
-                words = text[text.index(indicator) + len(indicator):].split()
-                if words:
-                    info['name'] = words[0].strip('!.,').title()
-                    
-        # Age detection
-        if "i'm" in text or "i am" in text:
-            words = text.split()
-            for i, word in enumerate(words):
-                if word.isdigit() and i + 1 < len(words) and "year" in words[i + 1]:
-                    info['age'] = int(word)
-                    
-        # Interest detection
-        interest_indicators = ["i love", "i like", "i enjoy", "my favorite"]
-        for indicator in interest_indicators:
-            if indicator in text:
-                interest = text[text.index(indicator) + len(indicator):].strip()
+        # Extract name
+        name_patterns = [
+            r"(?:my name is|i am|i'm) (\w+)",
+            r"(?:call me) (\w+)"
+        ]
+        for pattern in name_patterns:
+            match = re.search(pattern, text)
+            if match:
+                info['name'] = match.group(1).capitalize()
+                break
+        
+        # Extract age
+        age_patterns = [
+            r"(?:i am|i'm) (\d+)(?: years old)?",
+            r"(\d+) years old",
+            r"age(?:d)? (\d+)"
+        ]
+        for pattern in age_patterns:
+            match = re.search(pattern, text)
+            if match:
+                try:
+                    age = int(match.group(1))
+                    if 0 <= age <= 150:  # Basic age validation
+                        info['age'] = age
+                except ValueError:
+                    continue
+                break
+        
+        # Extract interests
+        interest_patterns = [
+            r"(?:i (?:like|love|enjoy)) (.+?)(?:\.|\!|\n|$)",
+            r"(?:my hobby is|my hobbies are) (.+?)(?:\.|\!|\n|$)",
+            r"(?:i'm interested in|i am interested in) (.+?)(?:\.|\!|\n|$)"
+        ]
+        for pattern in interest_patterns:
+            matches = re.finditer(pattern, text)
+            interests = set()
+            for match in matches:
+                interest = match.group(1).strip()
                 if interest:
-                    info['interest'] = interest.strip('!.,')
-                    
+                    interests.add(interest)
+            if interests:
+                info['interests'] = interests
+                break
+        
         return info
         
     def _update_personal_info(self, info: Dict[str, Any]):
@@ -392,85 +474,103 @@ class MotherLLM:
         
     def respond(self, message: str, context: list = None) -> str:
         """Generate a response using the appropriate developmental stage prompt and memories"""
-        # Analyze emotional content
-        emotional_analysis = self._analyze_emotional_content(message)
-        self.current_emotion = emotional_analysis
-        
-        # Store emotional memory if significant
-        if emotional_analysis['intensity'] > 0.5:
-            memory = {
+        try:
+            # Log the incoming message
+            logger.debug(f"Processing message: {message[:50]}...")
+            
+            # Analyze emotional content
+            emotional_analysis = self._analyze_emotional_content(message)
+            self.current_emotion = emotional_analysis
+            logger.debug(f"Emotional analysis: {emotional_analysis['type']} (Intensity: {emotional_analysis['intensity']:.2f})")
+            
+            # Store emotional memory if significant
+            if emotional_analysis['intensity'] > 0.5:
+                memory = {
+                    'text': message,
+                    'emotion': emotional_analysis,
+                    'timestamp': datetime.now(),
+                    'importance': 0.8 + emotional_analysis['intensity'] * 0.2
+                }
+                self._store_memory('emotional_memories', memory, memory['importance'])
+                logger.debug("Stored emotional memory with importance: %.2f", memory['importance'])
+            
+            # Extract and store personal information
+            personal_info = self._extract_personal_info(message)
+            if personal_info:
+                self._update_personal_info(personal_info)
+                memory = {
+                    'text': message,
+                    'personal_info': personal_info,
+                    'timestamp': datetime.now()
+                }
+                self._store_memory('personal_info', memory, 0.9)
+            
+            # Get current stage from context
+            current_stage = self._determine_stage(context)
+            stage_prompt = self.stage_prompts.get(current_stage, self.stage_prompts[DevelopmentalStage.EARLY_ELEMENTARY])
+            
+            # Enhance prompt with personal information
+            enhanced_prompt = self._enhance_prompt_with_personal_info(stage_prompt)
+            
+            # Add emotional context
+            emotional_context = f"\nCurrent Emotional State: {self.current_emotion['type']} (Intensity: {self.current_emotion['intensity']:.1f})"
+            enhanced_prompt += emotional_context
+            
+            # Retrieve relevant memories
+            current_context = {
                 'text': message,
-                'emotion': emotional_analysis,
+                'developmental_stage': current_stage,
+                'timestamp': datetime.now(),
+                'emotion': self.current_emotion
+            }
+            relevant_memories = self._retrieve_relevant_memories(current_context)
+            
+            # Add memory context
+            memory_context = "\n\nRelevant past interactions and observations:\n"
+            for memory in relevant_memories:
+                memory_context += f"- {memory['content'].get('text', '')}\n"
+                if 'emotion' in memory['content']:
+                    memory_context += f"  (Emotional: {memory['content']['emotion']['type']})\n"
+            
+            # Combine context and current message
+            full_context = context or []
+            full_context.append({"role": "user", "content": message})
+            
+            # Insert system prompt as first message
+            full_context.insert(0, {"role": "system", "content": enhanced_prompt + memory_context})
+            
+            # Generate response
+            logger.debug("Sending request to LLM API...")
+            response = chat_completion(
+                messages=full_context,
+                temperature=0.7
+            )
+            logger.debug("Received response from LLM API")
+            
+            # Add emotional expression to response
+            emotional_expression = self._generate_emotional_response(self.current_emotion)
+            response = emotional_expression + response
+            
+            # Store the interaction in memory
+            interaction_memory = {
+                'text': message,
+                'response': response,
+                'developmental_stage': current_stage,
+                'emotion': self.current_emotion,
                 'timestamp': datetime.now()
             }
-            self._store_memory('emotional_memories', memory, 0.8 + emotional_analysis['intensity'] * 0.2)
-        
-        # Extract and store personal information
-        personal_info = self._extract_personal_info(message)
-        if personal_info:
-            self._update_personal_info(personal_info)
-            memory = {
-                'text': message,
-                'personal_info': personal_info,
-                'timestamp': datetime.now()
-            }
-            self._store_memory('personal_info', memory, 0.9)
+            importance = self._calculate_memory_importance(interaction_memory)
+            self._store_memory('interaction', interaction_memory, importance)
             
-        # Get current stage from context
-        current_stage = self._determine_stage(context)
-        stage_prompt = self.stage_prompts.get(current_stage, self.stage_prompts[DevelopmentalStage.EARLY_ELEMENTARY])
-        
-        # Enhance prompt with personal information
-        enhanced_prompt = self._enhance_prompt_with_personal_info(stage_prompt)
-        
-        # Add emotional context
-        emotional_context = f"\nCurrent Emotional State: {self.current_emotion['type']} (Intensity: {self.current_emotion['intensity']:.1f})"
-        enhanced_prompt += emotional_context
-        
-        # Retrieve relevant memories
-        current_context = {
-            'text': message,
-            'developmental_stage': current_stage,
-            'timestamp': datetime.now(),
-            'emotion': self.current_emotion
-        }
-        relevant_memories = self._retrieve_relevant_memories(current_context)
-        
-        # Add memory context
-        memory_context = "\n\nRelevant past interactions and observations:\n"
-        for memory in relevant_memories:
-            memory_context += f"- {memory['content'].get('text', '')}\n"
-            if 'emotion' in memory['content']:
-                memory_context += f"  (Emotional: {memory['content']['emotion']['type']})\n"
+            return response
             
-        final_prompt = enhanced_prompt + memory_context
-        
-        # Combine context and current message
-        full_context = context or []
-        full_context.append({"role": "user", "content": message})
-        
-        # Generate response
-        response = chat_completion(
-            system_prompt=final_prompt,
-            messages=full_context
-        )
-        
-        # Add emotional expression to response
-        emotional_expression = self._generate_emotional_response(self.current_emotion)
-        response = emotional_expression + response
-        
-        # Store the interaction in memory
-        interaction_memory = {
-            'text': message,
-            'response': response,
-            'developmental_stage': current_stage,
-            'emotion': self.current_emotion,
-            'timestamp': datetime.now()
-        }
-        importance = self._calculate_memory_importance(interaction_memory)
-        self._store_memory('interaction', interaction_memory, importance)
-        
-        return response
+        except TimeoutError:
+            logger.warning("Response generation timed out")
+            return "*takes a thoughtful pause* I need a moment to process that properly. Could you please repeat your message?"
+            
+        except Exception as e:
+            logger.error(f"Error in response generation: {str(e)}", exc_info=True)
+            return "*apologetically* I'm having trouble processing that right now. Could we try again?"
         
     def _determine_stage(self, context: list) -> DevelopmentalStage:
         """Determine the appropriate developmental stage based on interaction context"""

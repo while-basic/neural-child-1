@@ -16,6 +16,8 @@ import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from schemas import MotherResponse
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -117,15 +119,41 @@ class LMStudioConnection:
 # Global LM Studio connection instance
 lm_studio = LMStudioConnection()
 
-def chat_completion(system_prompt: str, messages: List[Dict[str, str]]) -> str:
+def chat_completion(messages: List[Dict[str, str]], 
+                   model: str = "neural-child-v1",
+                   temperature: float = 0.7,
+                   max_retries: int = 3,
+                   retry_delay: float = 2.0) -> str:
     """
-    Wrapper function for chat completion with automatic reconnection
+    Send a chat completion request to the LM Studio API.
+    
+    Args:
+        messages: List of message dictionaries with 'role' and 'content'
+        model: Model identifier to use
+        temperature: Sampling temperature
+        max_retries: Maximum number of retry attempts
+        retry_delay: Delay between retries in seconds
+    
+    Returns:
+        str: The model's response text
+    
+    Raises:
+        TimeoutError: If the request times out after all retries
+        ConnectionError: If unable to connect to the API
+        Exception: For other unexpected errors
     """
+    # Use the global LM Studio connection
     global lm_studio
     
-    # Check connection health and reinitialize if needed
-    if not lm_studio.health_check():
-        logger.info("Reinitializing LM Studio connection...")
-        lm_studio = LMStudioConnection()
-    
-    return lm_studio.chat_completion(messages, system_prompt)
+    try:
+        logger.debug(f"Sending request to LLM API...")
+        response = lm_studio.chat_completion(
+            messages=messages,
+            temperature=temperature
+        )
+        logger.debug("Successfully received response from LLM API")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error in chat completion: {str(e)}")
+        raise

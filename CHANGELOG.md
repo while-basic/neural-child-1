@@ -173,4 +173,24 @@ All notable changes to the Neural Child project will be documented in this file.
 - Core psychological components
 - Memory and learning systems
 - Developmental stage progression
-- Basic error handling and logging 
+- Basic error handling and logging
+
+## [Unreleased]
+
+### Added
+- New Emotional Dashboard feature
+  - Real-time visualization of mother-child interactions
+  - Emotional state evolution plot
+  - Trust level gauge
+  - Interactive chat interface
+  - Emotional status display
+- Added plotly dependency for advanced visualizations
+
+### Changed
+- Updated requirements.txt with new dependencies
+
+### Technical Details
+- Created new EmotionalDashboard class for visualization
+- Implemented real-time emotion plotting using Plotly
+- Added trust level gauge visualization
+- Integrated with existing MotherLLM and DigitalChild classes 
