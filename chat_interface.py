@@ -148,89 +148,96 @@ class NeuralChildInterface:
             if not message.strip():
                 return "", history, {"NEUTRAL": 1.0}, {"EARLY_ELEMENTARY": 1.0}, self.create_emotion_plot()
                 
-            print(f"\nProcessing message: {message}")
+            print("\n" + "="*50)
+            print(f"Processing message: '{message}'")
             print(f"Current focus: {self.current_focus}")
+            print("="*50)
             
             # Add user message to history
             history.append({"role": "user", "content": message})
             self.chat_history.append({"role": "user", "content": message})
             
             # Evaluate message emotional content
+            print("\n📊 Evaluating emotional context...")
             emotional_context = self._evaluate_emotional_context(message)
+            print(f"Raw emotional tensor: {emotional_context}")
             
             # Store emotional state in history
+            print("📈 Storing emotional state in history...")
             self.emotional_history.append(emotional_context.cpu().numpy())
+            print(f"History length: {len(self.emotional_history)}")
             
             # Generate response based on current focus
             try:
                 if self.current_focus == "mother":
-                    print("Requesting response from mother...")
-                    # Add mother-specific context
+                    print("\n👩 Requesting response from mother...")
                     mother_context = {
                         "role": "system",
                         "content": """You are a caring mother. Keep responses brief (1-2 sentences). 
                         Use warm, nurturing language. Be direct and practical."""
                     }
                     
-                    # Add context to chat history - keep only the last message for context
                     context_history = [mother_context] + self.chat_history[-1:]
+                    print(f"Context length: {len(context_history)}")
                     
                     response = self.mother.respond(message, context=context_history)
-                    print(f"Mother's response: {response}")
+                    print(f"Mother's response: '{response}'")
                     
                     # Update child's emotional state based on mother's response
+                    print("\n🔄 Updating child's emotional state from mother's response...")
                     if hasattr(self.mother, 'current_emotion'):
                         mother_emotion = self.mother.current_emotion
                         if isinstance(mother_emotion, dict):
-                            # Convert mother's emotion dict to tensor
+                            print(f"Mother's emotion: {mother_emotion}")
                             mother_tensor = torch.tensor([
                                 mother_emotion.get('joy', 0.5),
                                 mother_emotion.get('trust', 0.5),
                                 mother_emotion.get('fear', 0.0),
                                 mother_emotion.get('surprise', 0.2)
                             ], device=self.device)
+                            print(f"Mother's emotional tensor: {mother_tensor}")
                             self.child.update_emotions(mother_tensor)
                         else:
-                            # Use the emotional context as fallback
+                            print("Using emotional context as fallback (mother's emotion not dict)")
                             self.child.update_emotions(emotional_context)
                     else:
-                        # Use the emotional context as fallback
+                        print("Using emotional context as fallback (no mother emotion)")
                         self.child.update_emotions(emotional_context)
                 else:
-                    print("Requesting response from child...")
-                    # Update child's emotional state based on message context
+                    print("\n👶 Requesting response from child...")
                     try:
                         # Update emotional state
+                        print("Updating child's emotional state...")
                         self.child.update_emotions(emotional_context)
                         
                         # Get child's response
+                        print("Getting child's response...")
                         if hasattr(self.child, 'process_interaction'):
+                            print("Using process_interaction method")
                             response = self.child.process_interaction(message)
                         elif hasattr(self.child, 'respond'):
+                            print("Using respond method")
                             response = self.child.respond(message)
                         else:
+                            print("No response method found, using fallback")
                             response = "*The child looks at you with understanding*"
                             
-                        print(f"Child's response: {response}")
+                        print(f"Child's response: '{response}'")
                         
-                        # Ensure we have a valid response
                         if not response:
+                            print("Empty response, using fallback")
                             response = "*The child nods silently*"
                             
                     except AttributeError as e:
-                        print(f"Child response error: {str(e)}")
-                        # Fallback response
+                        print(f"Child response error (AttributeError): {str(e)}")
                         response = "*The child acknowledges your love with a warm smile*"
-                        # Still try to update emotions even if response fails
                         if hasattr(self.child, 'emotional_state'):
+                            print("Updating emotional state directly")
                             self.child.emotional_state = emotional_context
                             
                     except Exception as e:
                         print(f"Unexpected error in child response: {str(e)}")
                         response = "*The child looks at you warmly*"
-                
-                if not response:
-                    response = "I apologize, but I was unable to generate a response."
                 
                 # Update history with response
                 history.append({"role": "assistant", "content": response})
@@ -238,46 +245,46 @@ class NeuralChildInterface:
                 
                 # Get updated states
                 try:
-                    # Get emotional state directly from the child's emotional state tensor
+                    print("\n📊 Getting updated emotional state...")
                     emotional_tensor = self.child.emotional_state
                     if emotional_tensor is None:
-                        # Initialize with neutral state if None
+                        print("No emotional state found, using neutral")
                         emotional_tensor = torch.tensor([0.5, 0.5, 0.0, 0.2], device=self.device)
-                        
+                    
+                    print(f"Current emotional tensor: {emotional_tensor}")
+                    
                     emotional_state = {
                         'joy': float(emotional_tensor[0]),
                         'trust': float(emotional_tensor[1]),
                         'fear': float(emotional_tensor[2]),
                         'surprise': float(emotional_tensor[3])
                     }
-                    development_stage = self.child.get_development_stage()
                     
-                    # Format emotional state for Gradio Label
-                    # Find the strongest emotion
-                    max_emotion = max(emotional_state.items(), key=lambda x: x[1])
-                    formatted_emotional = {max_emotion[0].upper(): float(max_emotion[1])}
-                    
-                    # Format development stage for Gradio Label
-                    if isinstance(development_stage, str):
-                        formatted_development = {development_stage: 1.0}
-                    else:
-                        formatted_development = {"EARLY_ELEMENTARY": 1.0}
-                        
-                    # Log emotional state change
-                    print(f"\nEmotional State Updated:")
+                    print("\n🔍 Final Emotional State:")
                     print(f"Joy: {emotional_state['joy']:.2f}")
                     print(f"Trust: {emotional_state['trust']:.2f}")
                     print(f"Fear: {emotional_state['fear']:.2f}")
                     print(f"Surprise: {emotional_state['surprise']:.2f}")
-                    print(f"Dominant Emotion: {max_emotion[0].upper()} ({max_emotion[1]:.2f})")
+                    
+                    development_stage = self.child.get_development_stage()
+                    print(f"Development stage: {development_stage}")
+                    
+                    # Format states for display
+                    max_emotion = max(emotional_state.items(), key=lambda x: x[1])
+                    formatted_emotional = {max_emotion[0].upper(): float(max_emotion[1])}
+                    
+                    if isinstance(development_stage, str):
+                        formatted_development = {development_stage: 1.0}
+                    else:
+                        formatted_development = {"EARLY_ELEMENTARY": 1.0}
+                    
+                    print(f"\nDominant Emotion: {max_emotion[0].upper()} ({max_emotion[1]:.2f})")
+                    print("="*50)
                         
                 except Exception as e:
                     print(f"Error getting states: {str(e)}")
                     formatted_emotional = {"NEUTRAL": 1.0}
                     formatted_development = {"EARLY_ELEMENTARY": 1.0}
-                
-                print(f"Emotional state: {formatted_emotional}")
-                print(f"Development stage: {formatted_development}")
                 
                 return "", history, formatted_emotional, formatted_development, self.create_emotion_plot()
                 
